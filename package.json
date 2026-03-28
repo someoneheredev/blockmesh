@@ -1,0 +1,38 @@
+{
+  "name": "creeperhost",
+  "version": "1.0.0",
+  "description": "Host Minecraft with your friends",
+  "main": "electron/main.js",
+  "scripts": {
+    "start":   "electron .",
+    "dev":     "electron . --dev",
+    "package": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.creeperhost.app",
+    "productName": "CreeperHost",
+    "directories": { "output": "dist" },
+    "files": [
+      "electron/**/*",
+      "frontend/**/*",
+      "backend/**/*",
+      "!backend/__pycache__",
+      "!backend/**/__pycache__"
+    ],
+    "extraResources": [
+      { "from": "backend", "to": "backend" }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "frontend/static/img/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}
