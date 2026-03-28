@@ -1,17 +1,24 @@
 """Server management API — start, stop, status, console, players."""
 
+import _thread
 import re
 from pathlib import Path
 from flask import Blueprint, jsonify, request
 from backend.state import state
 from backend.app import socketio
+from backend.utils.logger import AppLogger
 
 bp = Blueprint("server", __name__)
 
 
+def _emit_socket(event: str, payload: dict) -> None:
+    """Emit to all connected clients (omit ``to``/``room``). Works from the MC log OS thread."""
+    socketio.emit(event, payload, namespace="/")
+
+
 def _emit_log(line: str) -> None:
     state.append_log(line)
-    socketio.emit("server_log", {"line": line})
+    _emit_socket("server_log", {"line": line})
     _parse_player_event(line)
 
 
@@ -22,12 +29,12 @@ def _parse_player_event(line: str) -> None:
         name = join.group(1)
         if name not in state.players_online:
             state.players_online.append(name)
-            socketio.emit("players", {"players": state.players_online})
+            _emit_socket("players", {"players": state.players_online})
     elif leave:
         name = leave.group(1)
         if name in state.players_online:
             state.players_online.remove(name)
-            socketio.emit("players", {"players": state.players_online})
+            _emit_socket("players", {"players": state.players_online})
 
 
 @bp.route("/status", methods=["GET"])
@@ -78,17 +85,16 @@ def start_server():
     state.mc_server = srv
 
     def _on_status(status_str):
-            # status_str is now already a string like "starting" or "running"
-            socketio.emit("server_status", {"status": status_str})
-            
+            _emit_socket("server_status", {"status": status_str})
+
             if status_str == "running":
                 if state.group_manager:
                     state.group_manager.announce_host(state.username)
                     state.group_manager.send_server_info(state.local_ip, 25565)
-                    
+
             if status_str in ("stopped", "crashed"):
                 state.players_online.clear()
-                socketio.emit("players", {"players": []})
+                _emit_socket("players", {"players": []})
                 
     srv.on_status_change = _on_status
     srv.on_log_line      = _emit_log
@@ -109,18 +115,22 @@ def start_server():
 @bp.route("/stop", methods=["POST"])
 @bp.route("/stop/", methods=["POST"])
 def stop_server():
-    # Adding silent=True prevents Flask from crashing if the body is empty
-    data = request.get_json(silent=True) or {}
-    
-    import sys
-    print("\n!!! STOP ROUTE EXECUTED !!!", file=sys.stderr)
-    sys.stderr.flush()
+    request.get_json(silent=True)  # accept empty body
 
-    srv = getattr(state, 'mc_server', None)
+    srv = getattr(state, "mc_server", None)
     if not srv:
         return jsonify({"ok": False, "error": "Server not found"}), 404
 
-    srv.stop()
+    # Run stop on a real OS thread. Calling srv.stop() inside the eventlet
+    # request greenlet deadlocks: eventlet.sleep + subprocess + socketio.emit
+    # can stall the hub so the HTTP response never returns.
+    def _run_stop() -> None:
+        try:
+            srv.stop()
+        except Exception:
+            AppLogger.get().exception("Minecraft stop failed")
+
+    _thread.start_new_thread(_run_stop, ())
     return jsonify({"ok": True})
     
 @bp.route("/command", methods=["POST"])
@@ -148,9 +158,9 @@ def backup():
 
     def _done(result):
         if isinstance(result, Exception):
-            socketio.emit("server_log", {"line": f"[Backup] Failed: {result}"})
+            _emit_socket("server_log", {"line": f"[Backup] Failed: {result}"})
         else:
-            socketio.emit("server_log", {"line": f"[Backup] Saved → {result.name}"})
+            _emit_socket("server_log", {"line": f"[Backup] Saved → {result.name}"})
 
     backup_world_async(world_path, done_cb=_done)
     return jsonify({"ok": True})
@@ -188,7 +198,7 @@ def download_jar():
 
     def _progress(done, total):
         if total:
-            socketio.emit("download_progress", {
+            _emit_socket("download_progress", {
                 "pct": round(done / total * 100),
                 "done_mb": round(done / 1e6, 1),
                 "total_mb": round(total / 1e6, 1),
@@ -196,9 +206,9 @@ def download_jar():
 
     def _done(result):
         if isinstance(result, Exception):
-            socketio.emit("download_done", {"ok": False, "error": str(result)})
+            _emit_socket("download_done", {"ok": False, "error": str(result)})
         else:
-            socketio.emit("download_done", {"ok": True, "path": str(result)})
+            _emit_socket("download_done", {"ok": True, "path": str(result)})
 
     download_jar_async(jar_url, Path(dest), progress_cb=_progress, done_cb=_done)
     return jsonify({"ok": True, "dest": dest})

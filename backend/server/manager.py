@@ -5,6 +5,7 @@ and supports graceful stop.
 """
 
 import os
+import re
 import subprocess
 import threading
 import time
@@ -20,6 +21,9 @@ from backend.utils.logger import AppLogger
 # Minecraft version → minimum Java major version required
 _MC_JAVA_REQUIREMENTS = {21: 21, 20: 21, 19: 17, 18: 17, 17: 17, 16: 16, 8: 8}
 _MIN_JAVA = 17  # Safe default for modern Minecraft (1.17+)
+
+# Match vanilla "Done (12.3s)!" and similar; keep loose fallback below.
+_MC_DONE_LINE = re.compile(r"Done\s+\(\d+(?:\.\d+)?s\)!", re.IGNORECASE)
 
 
 def find_java(min_version: int = 17) -> str | None:
@@ -191,6 +195,7 @@ class MinecraftServer:
         self.on_log_line: Callable[[str], None] | None = None
 
         self._start_time: float | None = None
+        self._stop_lock = threading.Lock()
 
     @property
     def status(self) -> ServerStatus:
@@ -261,38 +266,61 @@ class MinecraftServer:
         return True
 
     def stop(self):
+        """Stop the server process. Safe to call from a normal OS thread (not an eventlet greenlet)."""
+        with self._stop_lock:
+            if self._status == ServerStatus.STOPPING:
+                return
             if not self._process or self._process.poll() is not None:
                 self._set_status(ServerStatus.STOPPED)
                 return
-
             self._log.info("Stopping Minecraft server...")
-            self._set_status(ServerStatus.STOPPING) # Tell UI we are stopping
+            self._set_status(ServerStatus.STOPPING)
+            proc = self._process
+        try:
+            proc.stdin.write("stop\r\n")
+            proc.stdin.flush()
+            self._log.info("Sent 'stop' command to Java stdin.")
+        except Exception as e:
+            self._log.error(f"Could not send stop command: {e}")
 
+        # Must not use eventlet.sleep here: this may run from a real thread while
+        # Flask-SocketIO uses eventlet; cooperative sleep can deadlock the hub.
+        wait = threading.Event()
+        for _ in range(50):
+            if proc.poll() is not None:
+                break
+            wait.wait(0.2)
+
+        if proc.poll() is None:
+            self._log.warning("Server lingering... forcing termination.")
             try:
-            # Add \r\n for Windows compatibility, and an extra log to confirm it fired
-                self._process.stdin.write("stop\r\n")
-                self._process.stdin.flush()
-                self._log.info("Sent 'stop' command to Java stdin.") # <--- Add this
-            except Exception as e:
-                self._log.error(f"Could not send stop command: {e}")
-            
-            # Wait for it to save and exit (using eventlet friendly sleep)
-            import eventlet
-            for _ in range(50): 
-                if self._process.poll() is not None:
-                    break
-                eventlet.sleep(0.2) # Give it up to 10 seconds total
+                proc.terminate()
+            except Exception:
+                pass
+            wait.wait(1.0)
 
-            # Force kill if it's being stubborn
-            if self._process.poll() is None:
-                self._log.warning("Server lingering... forcing termination.")
-                try:
-                    self._process.terminate()
-                except:
-                    pass
-            
-            self._process = None
-            self._set_status(ServerStatus.STOPPED)
+        if proc.poll() is None:
+            try:
+                p = psutil.Process(proc.pid)
+                for child in p.children(recursive=True):
+                    try:
+                        child.kill()
+                    except psutil.Error:
+                        pass
+                p.kill()
+            except (psutil.Error, ProcessLookupError, psutil.NoSuchProcess):
+                pass
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                pass
+
+        self._process = None
+        self._set_status(ServerStatus.STOPPED)
                 
     def send_command(self, command: str) -> None:
         if self._process and self._process.poll() is None:
@@ -325,34 +353,32 @@ class MinecraftServer:
     # Internal
 
     def _set_status(self, s: ServerStatus) -> None:
-            self._status = s
-            if self.on_status_change:
-                # This sends "starting", "running", etc. to the API callback
-                self.on_status_change(s.name.lower())
-                            
-    def _read_output(self) -> None:
-            import eventlet # Local import to ensure it's available
-            
-            # Using readline in a while loop is often more reliable for real-time logs
-            while True:
-                line = self._process.stdout.readline()
-                if not line:
-                    break
-                    
-                clean_line = line.strip()
-                self._log.info(f"[MC] {clean_line}")
-                
-                if self.on_log_line:
-                    self.on_log_line(clean_line)
-                    # This gives the SocketIO bridge a chance to actually 
-                    # send the packet while the loop is running
-                    eventlet.sleep(0) 
+        self._status = s
+        if self.on_status_change:
+            self.on_status_change(s.name.lower())
 
-                # Detection for "Done"
-                if "Done" in clean_line and "!" in clean_line:
-                    self._log.info("Match found: Server is RUNNING")
-                    self._set_status(ServerStatus.RUNNING)
-                                
+    def _read_output(self) -> None:
+        # Runs in a real OS thread — do not call eventlet.sleep here (can deadlock the hub).
+        while True:
+            line = self._process.stdout.readline()
+            if not line:
+                break
+
+            clean_line = line.strip()
+            self._log.info(f"[MC] {clean_line}")
+
+            if self.on_log_line:
+                try:
+                    self.on_log_line(clean_line)
+                except Exception:
+                    self._log.exception("on_log_line failed; continuing log reader")
+
+            if _MC_DONE_LINE.search(clean_line) or (
+                "Done" in clean_line and "!" in clean_line
+            ):
+                self._log.info("Match found: Server is RUNNING")
+                self._set_status(ServerStatus.RUNNING)
+
     def _monitor_process(self) -> None:
         self._process.wait()
         if self._status not in (ServerStatus.STOPPING, ServerStatus.STOPPED):

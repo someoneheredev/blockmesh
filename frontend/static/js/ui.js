@@ -76,10 +76,16 @@ switchTab(tabId) {
 
     const running = status === "running";
     const stopped = status === "stopped" || status === "crashed";
+    // Must match updateInterface: show Stop whenever the server is busy (poll runs every 3s).
+    const busy =
+      status === "running" ||
+      status === "starting" ||
+      status === "stopping";
 
     startBtn.classList.toggle("hidden", !stopped);
-    stopBtn.classList.toggle("hidden",  !running);
+    stopBtn.classList.toggle("hidden", !busy);
     startBtn.disabled = !stopped;
+    stopBtn.disabled = status === "starting";
 
     strip.classList.toggle("hidden", !running);
     players.classList.toggle("hidden", !running);

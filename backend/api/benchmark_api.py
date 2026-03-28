@@ -12,13 +12,13 @@ def run_benchmark():
     from backend.utils.benchmark import run_benchmark_async
 
     def _progress(label, pct):
-        socketio.emit("bench_progress", {"label": label, "pct": pct})
+        socketio.emit("bench_progress", {"label": label, "pct": pct}, namespace="/")
 
     def _done(result):
         state.bench_result = result
         if state.group_manager:
             state.group_manager.set_local_benchmark(result)
-        socketio.emit("bench_done", result.to_dict())
+        socketio.emit("bench_done", result.to_dict(), namespace="/")
 
     run_benchmark_async(progress_cb=_progress, done_cb=_done)
     return jsonify({"ok": True})

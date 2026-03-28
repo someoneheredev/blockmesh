@@ -13,7 +13,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path   = require("path");
 const net    = require("net");
 const http   = require("http");
-const { spawn } = require("child_process");
+const { spawn, execSync } = require("child_process");
 
 let mainWindow = null;
 let flaskProc  = null;
@@ -140,20 +140,25 @@ app.on("window-all-closed", () => {
 app.on("before-quit", killFlask);
 
 function killFlask() {
-  if (flaskProc) {
-    console.log("[Electron] Killing Flask and its children...");
-    
-    if (process.platform === "win32") {
-      // /T = Tree kill (kills Java too), /F = Force
-      const { exec } = require("child_process");
-      exec(`taskkill /pid ${flaskProc.pid} /T /F`, (err) => {
-        if (err) console.error("[Electron] Taskkill failed:", err);
-      });
-    } else {
-      flaskProc.kill("SIGTERM");
+  if (!flaskProc) return;
+  console.log("[Electron] Killing Flask and its children...");
+  const pid = flaskProc.pid;
+  const proc = flaskProc;
+  flaskProc = null;
+
+  if (process.platform === "win32") {
+    // /T = tree kill (Java child), /F = force — sync so the tree dies before exit
+    try {
+      execSync(`taskkill /pid ${pid} /T /F`, { stdio: "ignore" });
+    } catch (e) {
+      console.error("[Electron] Taskkill failed:", e.message);
     }
-    
-    flaskProc = null;
+  } else {
+    try {
+      proc.kill("SIGTERM");
+    } catch (_) {
+      /* ignore */
+    }
   }
 }
 // ── IPC handlers (called from renderer via preload) ───────────────

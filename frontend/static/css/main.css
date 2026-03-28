@@ -357,6 +357,11 @@ html, body {
   border: 1.5px solid #FDE68A;
   box-shadow: 0 4px 20px rgba(245,158,11,.12);
 }
+.server-hero.stopping {
+  background: linear-gradient(135deg, #FFFBEB 0%, #FFF9F0 100%);
+  border: 1.5px solid #FDE68A;
+  box-shadow: 0 4px 20px rgba(245,158,11,.12);
+}
 .server-hero.running {
   background: linear-gradient(135deg, #EDFAF4 0%, #F0FBF6 100%);
   border: 1.5px solid var(--green-100);
@@ -382,6 +387,8 @@ html, body {
   box-shadow: 0 0 0 4px rgba(72,187,120,.20); animation: pulse 2s infinite; }
 .server-hero.starting .hero-dot { background: var(--amber-400);
   box-shadow: 0 0 0 4px rgba(246,173,85,.20); animation: pulse 1s infinite; }
+.server-hero.stopping .hero-dot { background: var(--amber-400);
+  box-shadow: 0 0 0 4px rgba(246,173,85,.20); animation: pulse 1.2s infinite; }
 .server-hero.crashed  .hero-dot { background: var(--red-400); }
 
 .hero-status-text {

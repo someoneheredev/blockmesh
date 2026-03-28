@@ -169,15 +169,10 @@
     }
   }
   async function stopServer() {
-    console.log("STOP BUTTON CLICKED!");
-    alert("Stop button clicked!"); // This will now only trigger when you actually click the button
-
     try {
-      const result = await API.stopServer();
-      console.log("Stop result:", result);
+      await API.stopServer();
       UI.toast("Stop command sent", "success");
     } catch (err) {
-      console.error("Failed to stop:", err);
       UI.toast("Error stopping server: " + err.message, "error");
     }
   }
@@ -202,11 +197,20 @@
   }
 
   function onStatusChange(status) {
-    const isRunning = status === "running" || status === "starting";
+    const isBusy =
+      status === "running" ||
+      status === "starting" ||
+      status === "stopping";
 
     // 1. Handle the Hero Card colors (as we did before)
     const heroCard = document.querySelector(".server-hero");
-    heroCard.classList.remove("stopped", "starting", "running", "crashed");
+    heroCard.classList.remove(
+      "stopped",
+      "starting",
+      "running",
+      "crashed",
+      "stopping",
+    );
     heroCard.classList.add(status);
 
     // 2. Lock/Unlock Inputs
@@ -220,19 +224,19 @@
         input.tagName === "BUTTON" ||
         input.classList.contains("preset-btn")
       ) {
-        input.disabled = isRunning;
+        input.disabled = isBusy;
         // Add a visual 'locked' cue
-        input.style.opacity = isRunning ? "0.5" : "1";
-        input.style.cursor = isRunning ? "not-allowed" : "pointer";
+        input.style.opacity = isBusy ? "0.5" : "1";
+        input.style.cursor = isBusy ? "not-allowed" : "pointer";
       } else {
-        input.readOnly = isRunning;
-        input.disabled = isRunning;
+        input.readOnly = isBusy;
+        input.disabled = isBusy;
       }
     });
 
     // 3. Toggle Buttons (Start/Stop)
-    document.getElementById("start-btn").classList.toggle("hidden", isRunning);
-    document.getElementById("stop-btn").classList.toggle("hidden", !isRunning);
+    document.getElementById("start-btn").classList.toggle("hidden", isBusy);
+    document.getElementById("stop-btn").classList.toggle("hidden", !isBusy);
     document.getElementById("stop-btn").disabled = status === "starting";
   } // ── Resource presets ─────────────────────────────────────────────
   document.querySelectorAll(".preset-btn").forEach((btn) => {
@@ -512,12 +516,21 @@
   }
 
   function updateInterface(status) {
-    const isBusy = status === "starting" || status === "running";
+    const isBusy =
+      status === "starting" ||
+      status === "running" ||
+      status === "stopping";
 
     // 1. Handle the Hero Card (Colors/Glow)
     const heroCard = document.querySelector(".server-hero");
     if (heroCard) {
-      heroCard.classList.remove("stopped", "starting", "running", "crashed");
+      heroCard.classList.remove(
+        "stopped",
+        "starting",
+        "running",
+        "crashed",
+        "stopping",
+      );
       heroCard.classList.add(status);
     }
 
