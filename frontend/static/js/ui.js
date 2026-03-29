@@ -3,111 +3,146 @@
  */
 
 const PRESETS = {
-  light: {
-    ram: 1024, threads: 1,
-    label: "Light",
-    desc: "Minimal resources for a playable experience — great for 1–4 players on older hardware.",
-    ramDisplay: "1 GB", threadsDisplay: "1",
+  solo: {
+    ram: 1536, // 1.5GB is safer for modern vanilla solo
+    threads: 1,
+    label: "Solo",
+    desc: "Perfect for testing plugins or playing by yourself. Ultra-low impact on your PC.",
+    ramDisplay: "1.5 GB",
+    threadsDisplay: "1",
   },
-  default: {
-    ram: 2048, threads: 2,
-    label: "Default",
-    desc: "Balanced resources for the best everyday experience — ideal for 2–8 players.",
-    ramDisplay: "2 GB", threadsDisplay: "2",
+  squad: {
+    ram: 3072, // 3GB is the "sweet spot" for 2-5 friends
+    threads: 2,
+    label: "Squad",
+    desc: "The best everyday experience for you and a few friends. Smooth and reliable.",
+    ramDisplay: "3 GB",
+    threadsDisplay: "2",
   },
-  good: {
-    ram: 4096, threads: 4,
-    label: "Good",
-    desc: "Plenty of headroom for mods, plugins, or larger friend groups.",
-    ramDisplay: "4 GB", threadsDisplay: "4",
+  vanilla: {
+    ram: 4096,
+    threads: 3,
+    label: "Vanilla+",
+    desc: "Optimized for larger groups (8+) on a standard world. Great for community builds.",
+    ramDisplay: "4 GB",
+    threadsDisplay: "3",
+  },
+  modded: {
+    ram: 6144,
+    threads: 4,
+    label: "Modded",
+    desc: "Extra memory for Modpacks like Vault Hunters or SkyFactory. Recommended for 2-4 players.",
+    ramDisplay: "6 GB",
+    threadsDisplay: "4",
+  },
+  beast: {
+    ram: 8192,
+    threads: 6,
+    label: "Beast",
+    desc: "Maximum power for heavy 'Kitchen Sink' packs with 200+ mods. Needs a beefy PC!",
+    ramDisplay: "8 GB",
+    threadsDisplay: "6",
   },
   advanced: {
-    ram: null, threads: null,
-    label: "Advanced",
-    desc: "Set your own RAM and thread count. Useful for very large or custom setups.",
-    ramDisplay: "Custom", threadsDisplay: "Custom",
+    ram: null,
+    threads: null,
+    label: "Custom",
+    desc: "Take total control. Adjust the sliders below to fit your exact server needs.",
+    ramDisplay: "Manual",
+    threadsDisplay: "Manual",
   },
 };
 
 const UI = {
-
   // ── Tab navigation ─────────────────────────────────────────────
-switchTab(tabId) {
-    document.querySelectorAll('.nav-item').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.tab === tabId);
+  switchTab(tabId) {
+    document.querySelectorAll(".nav-item").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.tab === tabId);
     });
 
-    document.querySelectorAll('.tab-pane').forEach(pane => {
+    document.querySelectorAll(".tab-pane").forEach((pane) => {
       if (pane.id === `tab-${tabId}`) {
-        pane.classList.remove('hidden');
-        pane.classList.add('active');
+        pane.classList.remove("hidden");
+        pane.classList.add("active");
       } else {
-        pane.classList.add('hidden');
-        pane.classList.remove('active');
+        pane.classList.add("hidden");
+        pane.classList.remove("active");
       }
     });
-    
+
     console.log(`Switched to tab: ${tabId}`);
   },
 
-  // ── Server hero card ───────────────────────────────────────────
-  setServerStatus(status, uptime) {
-    const hero = document.getElementById("server-hero");
-    const dot  = document.getElementById("hero-dot");
-    const txt  = document.getElementById("hero-status-text");
-    const det  = document.getElementById("hero-detail");
-    const startBtn = document.getElementById("start-btn");
-    const stopBtn  = document.getElementById("stop-btn");
-    const strip    = document.getElementById("connect-strip");
-    const players  = document.getElementById("hero-players");
+  lastStatus: null,
 
-    hero.className = `server-hero ${status}`;
+  setServerStatus(status, uptime, isHost, hasHost) {
+    const hero = document.getElementById("server-hero");
+    const txt = document.getElementById("hero-status-text");
+    const det = document.getElementById("hero-detail");
+    const startBtn = document.getElementById("start-btn");
+    const stopBtn = document.getElementById("stop-btn");
+    const strip = document.getElementById("connect-strip");
+    const players = document.getElementById("hero-players");
+
+    // 1. Anti-flicker: Only update class if status changed
+    if (this.lastStatus !== status) {
+      hero.className = `server-hero ${status}`;
+      this.lastStatus = status;
+    }
 
     const LABELS = {
-      stopped:  ["Server is offline",   "Start the server to let friends join"],
-      starting: ["Server is starting…", "Getting everything ready, hang tight"],
-      running:  ["Server is online",    uptime ? `Running for ${uptime}` : "Ready for players"],
-      stopping: ["Server is stopping…", "Saving world and shutting down"],
-      crashed:  ["Server crashed",      "Check the console for errors"],
+      stopped: ["Server is offline", "Start the server to let friends join"],
+      starting: ["Server is starting...", "Getting everything ready, hang tight"],
+      running: ["Server is online", uptime ? `Running for ${uptime}` : "Ready for players"],
+      stopping: ["Server is stopping...", "Saving world and shutting down"],
+      crashed: ["Server crashed", "Check the console for errors"],
     };
+
     const [label, detail] = LABELS[status] || ["Unknown", ""];
     txt.textContent = label;
     det.textContent = detail;
 
-    const running = status === "running";
-    const stopped = status === "stopped" || status === "crashed";
-    // Must match updateInterface: show Stop whenever the server is busy (poll runs every 3s).
-    const busy =
-      status === "running" ||
-      status === "starting" ||
-      status === "stopping";
+    // 2. Define visibility states (Fixing the 'running is not defined' error)
+    const isRunning = (status === "running");
+    const isStopped = (status === "stopped" || status === "crashed");
+    const isBusy = (status === "running" || status === "starting" || status === "stopping");
 
-    startBtn.classList.toggle("hidden", !stopped);
-    stopBtn.classList.toggle("hidden", !busy);
-    startBtn.disabled = !stopped;
-    stopBtn.disabled = status === "starting";
+    // 3. Toggle Visibility
+    startBtn.classList.toggle("hidden", !isStopped);
+    stopBtn.classList.toggle("hidden", !isBusy);
+    
+    strip.classList.toggle("hidden", !isRunning);
+    players.classList.toggle("hidden", !isRunning);
 
-    strip.classList.toggle("hidden", !running);
-    players.classList.toggle("hidden", !running);
+    // 4. Apply Permissions (Who can actually CLICK the buttons)
+    this.updatePermissions(isHost, hasHost, status);
 
-    if (!running) {
-      UI.setStats(null, null, null, null);
-      UI.renderPlayerChips([]);
+    if (isStopped) {
+      this.setStats(null, null, null, null);
+      this.renderPlayerChips([]);
     }
   },
 
   setStats(cpu, ram, pid, uptime) {
-    const fmt = (v, fn) => v != null ? fn(v) : "—";
-    document.getElementById("hstat-cpu").textContent    = fmt(cpu,    v => `${v.toFixed(1)}%`);
-    document.getElementById("hstat-ram").textContent    = fmt(ram,    v => `${Math.round(v)} MB`);
-    document.getElementById("hstat-pid").textContent    = fmt(pid,    v => String(v));
+    const fmt = (v, fn) => (v != null ? fn(v) : "—");
+    document.getElementById("hstat-cpu").textContent = fmt(
+      cpu,
+      (v) => `${v.toFixed(1)}%`,
+    );
+    document.getElementById("hstat-ram").textContent = fmt(
+      ram,
+      (v) => `${Math.round(v)} MB`,
+    );
+    document.getElementById("hstat-pid").textContent = fmt(pid, (v) =>
+      String(v),
+    );
     document.getElementById("hstat-uptime").textContent = uptime || "—";
   },
 
   renderPlayerChips(players) {
     const wrap = document.getElementById("hero-player-chips");
     wrap.innerHTML = "";
-    players.forEach(p => {
+    players.forEach((p) => {
       const chip = document.createElement("span");
       chip.className = "player-chip";
       chip.textContent = p;
@@ -122,14 +157,22 @@ switchTab(tabId) {
 
   // ── Resource presets ───────────────────────────────────────────
   activatePreset(preset) {
-    document.querySelectorAll(".preset-btn").forEach(b => {
+    const cfg = PRESETS[preset];
+
+    // Safety check: if the preset doesn't exist, log it and stop the crash
+    if (!cfg) {
+      console.error(`Preset "${preset}" not found in PRESETS object!`);
+      return;
+    }
+
+    document.querySelectorAll(".preset-btn").forEach((b) => {
       b.classList.toggle("active", b.dataset.preset === preset);
     });
-    const cfg = PRESETS[preset];
+
     document.getElementById("preset-banner-text").textContent = cfg.desc;
 
-    const advCtrl  = document.getElementById("advanced-controls");
-    const summary  = document.getElementById("preset-summary");
+    const advCtrl = document.getElementById("advanced-controls");
+    const summary = document.getElementById("preset-summary");
 
     if (preset === "advanced") {
       advCtrl.classList.remove("hidden");
@@ -137,20 +180,24 @@ switchTab(tabId) {
     } else {
       advCtrl.classList.add("hidden");
       summary.classList.remove("hidden");
-      document.getElementById("psummary-ram").textContent     = cfg.ramDisplay;
-      document.getElementById("psummary-threads").textContent = cfg.threadsDisplay;
-      document.getElementById("psummary-java").textContent    = "Auto";
+      document.getElementById("psummary-ram").textContent = cfg.ramDisplay;
+      document.getElementById("psummary-threads").textContent =
+        cfg.threadsDisplay;
+      document.getElementById("psummary-java").textContent = "Auto";
     }
   },
 
   getPresetValues(activePreset) {
     if (activePreset === "advanced") {
       return {
-        ram:     parseInt(document.getElementById("ram-slider").value),
+        ram: parseInt(document.getElementById("ram-slider").value),
         threads: parseInt(document.getElementById("thread-slider").value),
       };
     }
-    return { ram: PRESETS[activePreset].ram, threads: PRESETS[activePreset].threads };
+    return {
+      ram: PRESETS[activePreset].ram,
+      threads: PRESETS[activePreset].threads,
+    };
   },
 
   // ── Peers ──────────────────────────────────────────────────────
@@ -158,7 +205,7 @@ switchTab(tabId) {
     const list = document.getElementById("peer-list");
     list.innerHTML = "";
     let online = 0;
-    peers.forEach(p => {
+    peers.forEach((p) => {
       if (p.online || p.is_self) online++;
       list.appendChild(UI._buildPeerRow(p, selfUsername));
     });
@@ -173,9 +220,17 @@ switchTab(tabId) {
     div.className = `peer-row${isHost ? " is-host" : ""}`;
     div.dataset.username = p.username;
 
-    const avatarState = isHost ? "hosting" : (p.online || p.is_self) ? "online" : "";
-    const sub = isHost ? "Hosting" : (p.online || p.is_self) ? "Online" : "Offline";
-    const subClass = isHost ? "hosting" : (p.online || p.is_self) ? "online" : "";
+    const avatarState = isHost
+      ? "hosting"
+      : p.online || p.is_self
+        ? "online"
+        : "";
+    const sub = isHost
+      ? "Hosting"
+      : p.online || p.is_self
+        ? "Online"
+        : "Offline";
+    const subClass = isHost ? "hosting" : p.online || p.is_self ? "online" : "";
 
     div.innerHTML = `
       <div class="peer-avatar ${avatarState}">${p.username[0].toUpperCase()}</div>
@@ -191,11 +246,54 @@ switchTab(tabId) {
     return div;
   },
 
+  // -- Chat
+  updatePermissions(isHost, hasHost, status) {
+    const startBtn = document.getElementById("start-btn");
+    const stopBtn = document.getElementById("stop-btn");
+    const configInputs = document.querySelectorAll(".ch-slider, .preset-btn, #browse-jar-btn, #download-jar-btn, #java-path, #backup-btn, #console-send");
+
+    // Rule 1: If no host is elected, NO ONE can touch server buttons
+    if (!hasHost) {
+      [startBtn, stopBtn].forEach(b => {
+        b.disabled = true;
+        b.title = "A host must be elected first";
+      });
+      return;
+    }
+
+    // Rule 2: If you are NOT the host, you can see but not touch
+    if (!isHost) {
+      const lock = (el) => {
+        el.disabled = true;
+        el.style.opacity = "0.5";
+        el.style.cursor = "not-allowed";
+        el.title = "Only the Host can control the server";
+      };
+
+      lock(startBtn);
+      lock(stopBtn);
+      configInputs.forEach(lock);
+    } else {
+      // Rule 3: You ARE the host, normal "Busy" logic applies
+      const isBusy = (status === "starting" || status === "running" || status === "stopping");
+      
+      startBtn.disabled = (status !== "stopped" && status !== "crashed");
+      stopBtn.disabled = (status === "starting"); // Allow stopping during running/stopping
+      
+      configInputs.forEach(el => {
+        el.disabled = isBusy;
+        el.style.opacity = isBusy ? "0.5" : "1";
+        el.style.cursor = isBusy ? "not-allowed" : "pointer";
+        el.title = "";
+      });
+    }
+  },
+
   // ── Chat ───────────────────────────────────────────────────────
   appendChatMsg(msg, selfUsername) {
-    const log  = document.getElementById("chat-log");
+    const log = document.getElementById("chat-log");
     const self = msg.sender === selfUsername;
-    const div  = document.createElement("div");
+    const div = document.createElement("div");
     div.className = `chat-msg ${self ? "self" : ""}`;
     div.innerHTML = `
       <div class="chat-bubble-row">
@@ -224,7 +322,9 @@ switchTab(tabId) {
   },
 
   setHostInfo(host, ip, port) {
-    document.getElementById("connect-address").textContent = ip ? `${ip}:${port || 25565}` : "—";
+    document.getElementById("connect-address").textContent = ip
+      ? `${ip}:${port || 25565}`
+      : "—";
     const lbl = document.getElementById("chat-host-label");
     if (host) {
       lbl.textContent = `⚡ ${host} is hosting`;
@@ -241,37 +341,84 @@ switchTab(tabId) {
     const div = document.createElement("div");
     div.className = "log-line";
     if (/ERROR|Exception|CRASHED/i.test(line)) div.classList.add("log-error");
-    else if (/WARN/i.test(line))               div.classList.add("log-warn");
-    else if (/Done.*For help/i.test(line))     div.classList.add("log-success");
-    else if (line.startsWith(">"))             div.classList.add("log-cmd");
+    else if (/WARN/i.test(line)) div.classList.add("log-warn");
+    else if (/Done.*For help/i.test(line)) div.classList.add("log-success");
+    else if (line.startsWith(">")) div.classList.add("log-cmd");
     div.textContent = line;
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
     while (box.children.length > 600) box.removeChild(box.firstChild);
   },
 
-  clearLog() { document.getElementById("console-log").innerHTML = ""; },
+  clearLog() {
+    document.getElementById("console-log").innerHTML = "";
+  },
 
   // ── Version list ───────────────────────────────────────────────
   renderVersionList(versions, releaseOnly, onSelect) {
     const list = document.getElementById("version-list");
-    const filtered = releaseOnly ? versions.filter(v => v.type === "release") : versions;
+    const filtered = releaseOnly
+      ? versions.filter((v) => v.type === "release")
+      : versions;
     if (!filtered.length) {
       list.innerHTML = '<div class="version-loading">No versions found</div>';
       return;
     }
-    list.innerHTML = filtered.slice(0, 40).map(v =>
-      `<div class="version-item" data-url="${v.url}" data-id="${v.id}">
+    list.innerHTML = filtered
+      .slice(0, 40)
+      .map(
+        (v) =>
+          `<div class="version-item" data-url="${v.url}" data-id="${v.id}">
          <span>${v.id}</span>
          <span class="version-type">${v.type}</span>
-       </div>`
-    ).join("");
-    list.querySelectorAll(".version-item").forEach(el => {
+       </div>`,
+      )
+      .join("");
+    list.querySelectorAll(".version-item").forEach((el) => {
       el.addEventListener("click", () => {
-        list.querySelectorAll(".version-item").forEach(x => x.classList.remove("selected"));
+        list
+          .querySelectorAll(".version-item")
+          .forEach((x) => x.classList.remove("selected"));
         el.classList.add("selected");
         onSelect(el.dataset.url, el.dataset.id);
       });
+    });
+  },
+
+  // ── Pending friend requests ───────────────────────────────────
+  renderPendingRequests(reqs, onAccept, onDecline) {
+    const section = document.getElementById("pending-section");
+    const list = document.getElementById("pending-list");
+    if (!list) return;
+    list.innerHTML = "";
+
+    if (!reqs || reqs.length === 0) {
+      section.classList.add("hidden");
+      return;
+    }
+    section.classList.remove("hidden");
+
+    reqs.forEach((req) => {
+      const card = document.createElement("div");
+      card.className = "friend-request-card";
+      card.innerHTML = `
+        <div class="peer-avatar online">${req.username[0].toUpperCase()}</div>
+        <div class="peer-info">
+          <div class="peer-name">${escHtml(req.username)}</div>
+          <div class="peer-sub">Wants to join your group</div>
+        </div>
+        <div class="request-actions">
+          <button class="btn-accept btn-primary btn-sm">Accept</button>
+          <button class="btn-decline btn-secondary btn-sm">Decline</button>
+        </div>
+      `;
+      card
+        .querySelector(".btn-accept")
+        .addEventListener("click", () => onAccept(req.username));
+      card
+        .querySelector(".btn-decline")
+        .addEventListener("click", () => onDecline(req.username));
+      list.appendChild(card);
     });
   },
 
@@ -303,12 +450,34 @@ switchTab(tabId) {
   },
 
   // ── Modal helpers ──────────────────────────────────────────────
-  showModal(id)  { document.getElementById(id).classList.remove("hidden"); },
-  hideModal(id)  { document.getElementById(id).classList.add("hidden"); },
+  showModal(id) {
+    document.getElementById(id).classList.remove("hidden");
+  },
+  hideModal(id) {
+    document.getElementById(id).classList.add("hidden");
+  },
 };
 
 function escHtml(s) {
   return String(s)
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  const minBtn = document.getElementById("win-min");
+  const maxBtn = document.getElementById("win-max");
+  const closeBtn = document.getElementById("win-close");
+
+  if (minBtn) {
+    minBtn.addEventListener("click", () => window.electronAPI.minimize());
+  }
+  if (maxBtn) {
+    maxBtn.addEventListener("click", () => window.electronAPI.maximize());
+  }
+  if (closeBtn) {
+    closeBtn.addEventListener("click", () => window.electronAPI.close());
+  }
+});

@@ -42,7 +42,11 @@ const API = {
 
   // Server
   getStatus: () => apiFetch("/api/server/status"),
-  getLog: () => apiFetch("/api/server/log"),
+  /** @param {number} [since] — return only lines from this index onward; response includes `total` */
+  getLog: (since) =>
+    apiFetch(
+      since != null ? `/api/server/log?since=${since}` : "/api/server/log",
+    ),
   startServer: (d) =>
     apiFetch("/api/server/start", { method: "POST", body: JSON.stringify(d) }),
   stopServer: () =>
@@ -62,6 +66,18 @@ const API = {
       method: "POST",
       body: JSON.stringify(d),
     }),
+
+  // Friend requests
+  requestFriend: (username, ip, port) =>
+    apiFetch("/api/group/peers/request", {
+      method: "POST",
+      body: JSON.stringify({ username, ip: ip || "", port: port || 25566 }),
+    }),
+  acceptFriend: (username) =>
+    apiFetch("/api/group/peers/accept", { method: "POST", body: JSON.stringify({ username }) }),
+  declineFriend: (username) =>
+    apiFetch("/api/group/peers/decline", { method: "POST", body: JSON.stringify({ username }) }),
+  getPendingRequests: () => apiFetch("/api/group/peers/pending"),
 
   // Benchmark
   runBenchmark: () => apiFetch("/api/benchmark/run", { method: "POST" }),

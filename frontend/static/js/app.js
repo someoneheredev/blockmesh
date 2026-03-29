@@ -13,20 +13,20 @@
   let jarPath = "";
   let versions = [];
   let selectedVer = null;
-  let activePreset = "default";
+  let activePreset = "squad";
   let statusTimer = null;
+  /** Last uptime string from GET /status; used when Socket.IO updates hero before the next poll. */
+  let lastServerUptime = null;
+  /** Incremental log fetch cursor (matches backend `state.server_log` length). */
+  let logTailCursor = 0;
+  let logPollTimer = null;
+
+  const MC_DONE_REGEX = /Done\s+\(\d+\.?\d*s\)!/;
 
   // ── SocketIO ────────────────────────────────────────────────────
   const socket = io();
 
-  socket.on("server_log", ({ line }) => {
-    UI.appendLog(line);
-    const doneRegex = /Done\s+\(\d+\.?\d*s\)!/;
-    if (doneRegex.test(line)) {
-      console.log("Detected server start completion via logs.");
-      onStatusChange("running");
-    }
-  });
+  // Console uses HTTP poll (see pollLogTail); Socket.IO log events are not relied on under eventlet.
   socket.on("system_msg", ({ message, type }) => {
     let formattedMsg = message;
     if (message.includes("[!]"))
@@ -53,6 +53,20 @@
     UI.setHostInfo(host, host === username ? localIp : null, 25565);
     UI.appendSystemMsg(`⚡ ${host} is now hosting.`);
     refreshPeers();
+  });
+
+  socket.on("friend_request", (req) => {
+    UI.toast(`🤝 Friend request from ${req.username}!`, "info", 6000);
+    loadPendingRequests();
+  });
+
+  socket.on("friend_accepted", ({ username: u }) => {
+    UI.toast(`${u} accepted your request! 🎉`, "success");
+    refreshPeers();
+  });
+
+  socket.on("friend_declined", ({ username: u }) => {
+    UI.toast(`${u} declined your request.`, "default");
   });
 
   // ── Boot ────────────────────────────────────────────────────────
@@ -88,7 +102,13 @@
     });
 
     // Initial data
-    await Promise.all([refreshPeers(), refreshStatus(), loadChat(), loadLog()]);
+    await Promise.all([
+      refreshPeers(),
+      refreshStatus(),
+      loadChat(),
+      loadLog(),
+      loadPendingRequests(),
+    ]);
 
     // Detect Java
     autoDetectJava();
@@ -151,16 +171,16 @@
     startBtn.innerHTML = `<span>Starting...</span>`;
 
     try {
+      const presetVals = UI.getPresetValues(activePreset);
       await API.startServer({
         jar_path: jarPath,
         java_path: document.getElementById("java-path").value,
-        ram:
-          activePreset === "advanced"
-            ? document.getElementById("ram-slider").value
-            : null,
-        preset: activePreset,
+        ram_mb: presetVals.ram,
+        threads: presetVals.threads,
       });
       UI.toast("Server start command sent", "success");
+      syncLogPoller("starting");
+      void pollLogTail();
     } catch (err) {
       UI.toast(err.message, "error");
       // Re-enable only if it failed to even try starting
@@ -189,34 +209,68 @@
   async function refreshStatus() {
     const s = await API.getStatus().catch(() => null);
     if (!s) return;
-    UI.setServerStatus(s.status, s.uptime);
-    if (s.status === "running") {
+
+    // Check host status
+    const isHost = currentHost === username;
+    const hasHost = currentHost !== null;
+
+    lastServerUptime = s.uptime ?? null;
+
+    // Pass host info to UI
+    UI.setServerStatus(s.status, lastServerUptime, isHost, hasHost);
+
+    if (s.status === "running" || (s.status === "starting" && s.pid != null)) {
       UI.setStats(s.cpu, s.ram, s.pid, s.uptime);
-      UI.renderPlayerChips(s.players || []);
+      if (s.players) UI.renderPlayerChips(s.players);
+    }
+
+    syncLogPoller(s.status);
+  }
+
+  async function pollLogTail() {
+    try {
+      const data = await API.getLog(logTailCursor);
+      const total = data.total ?? data.lines.length;
+      for (const line of data.lines) {
+        UI.appendLog(line);
+        if (MC_DONE_REGEX.test(line)) {
+          onStatusChange("running");
+        }
+      }
+      logTailCursor = total;
+    } catch (_) {
+      /* ignore transient network errors */
+    }
+  }
+
+  function syncLogPoller(status) {
+    const busy =
+      status === "starting" || status === "running" || status === "stopping";
+    if (busy) {
+      if (!logPollTimer) {
+        logPollTimer = setInterval(() => void pollLogTail(), 350);
+        void pollLogTail();
+      }
+    } else if (logPollTimer) {
+      clearInterval(logPollTimer);
+      logPollTimer = null;
     }
   }
 
   function onStatusChange(status) {
+    // Keep hero title/detail in sync with classes (socket handlers used to only toggle CSS).
+    UI.setServerStatus(status, lastServerUptime);
+    if (status === "running") {
+      void refreshStatus();
+    }
+
     const isBusy =
-      status === "running" ||
-      status === "starting" ||
-      status === "stopping";
+      status === "running" || status === "starting" || status === "stopping";
 
-    // 1. Handle the Hero Card colors (as we did before)
-    const heroCard = document.querySelector(".server-hero");
-    heroCard.classList.remove(
-      "stopped",
-      "starting",
-      "running",
-      "crashed",
-      "stopping",
-    );
-    heroCard.classList.add(status);
-
-    // 2. Lock/Unlock Inputs
+    // 1. Lock/Unlock Inputs
     // Select all sliders, checkboxes, and preset buttons
     const configInputs = document.querySelectorAll(
-      ".ch-slider, .preset-btn, .field-input, #select-jar-btn",
+      ".ch-slider, .preset-btn, #browse-jar-btn, #download-jar-btn, #java-path",
     );
 
     configInputs.forEach((input) => {
@@ -234,10 +288,7 @@
       }
     });
 
-    // 3. Toggle Buttons (Start/Stop)
-    document.getElementById("start-btn").classList.toggle("hidden", isBusy);
-    document.getElementById("stop-btn").classList.toggle("hidden", !isBusy);
-    document.getElementById("stop-btn").disabled = status === "starting";
+    // Start/Stop visibility is handled by UI.setServerStatus above.
   } // ── Resource presets ─────────────────────────────────────────────
   document.querySelectorAll(".preset-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -303,30 +354,75 @@
   });
 
   // ── Friends ──────────────────────────────────────────────────────
+  // ── Friends ──────────────────────────────────────────────────────
+  document.getElementById("lan-toggle").addEventListener("change", (e) => {
+    document
+      .getElementById("lan-ip-field")
+      .classList.toggle("hidden", !e.target.checked);
+  });
+
   document
     .getElementById("add-friend-btn")
     .addEventListener("click", addFriend);
-  document.getElementById("add-ip").addEventListener("keydown", (e) => {
+  document.getElementById("add-name").addEventListener("keydown", (e) => {
     if (e.key === "Enter") addFriend();
   });
 
   async function addFriend() {
     const name = document.getElementById("add-name").value.trim();
-    const ip = document.getElementById("add-ip").value.trim();
-    if (!name || !ip) {
-      UI.toast("Enter both a username and IP address.", "error");
+    const useLan = document.getElementById("lan-toggle").checked;
+    const ip = useLan ? document.getElementById("add-ip").value.trim() : "";
+
+    if (!name) {
+      UI.toast("Enter a username.", "error");
       return;
     }
+    if (useLan && !ip) {
+      UI.toast("Enter their IP for LAN mode.", "error");
+      return;
+    }
+
+    const btn = document.getElementById("add-friend-btn");
+    btn.disabled = true;
+    btn.textContent = "Sending…";
+
     try {
-      await API.addPeer(name, ip);
+      const result = await API.requestFriend(name, ip);
       document.getElementById("add-name").value = "";
       document.getElementById("add-ip").value = "";
-      UI.toast(`${name} added!`, "success");
-      UI.appendSystemMsg(`${name} was added to your group.`);
+      UI.toast(result.message || `Request sent to ${name}!`, "success");
+    } catch (e) {
+      UI.toast(e.message, "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Send Friend Request";
+    }
+  }
+
+  async function onAccept(username) {
+    try {
+      await API.acceptFriend(username);
+      UI.toast(`${username} added to your group!`, "success");
+      await loadPendingRequests();
       await refreshPeers();
     } catch (e) {
-      UI.toast(`Couldn't add friend: ${e.message}`, "error");
+      UI.toast(e.message, "error");
     }
+  }
+
+  async function onDecline(username) {
+    try {
+      await API.declineFriend(username);
+      UI.toast("Request declined.", "default");
+      await loadPendingRequests();
+    } catch (e) {
+      UI.toast(e.message, "error");
+    }
+  }
+
+  async function loadPendingRequests() {
+    const reqs = await API.getPendingRequests().catch(() => []);
+    UI.renderPendingRequests(reqs, onAccept, onDecline);
   }
 
   document.getElementById("elect-btn").addEventListener("click", async () => {
@@ -365,8 +461,9 @@
   }
 
   async function loadLog() {
-    const data = await API.getLog().catch(() => ({ lines: [] }));
+    const data = await API.getLog().catch(() => ({ lines: [], total: 0 }));
     data.lines.forEach((l) => UI.appendLog(l));
+    logTailCursor = data.total ?? data.lines.length;
   }
 
   // ── Chat ──────────────────────────────────────────────────────────
@@ -516,28 +613,21 @@
   }
 
   function updateInterface(status) {
-    const isBusy =
-      status === "starting" ||
-      status === "running" ||
-      status === "stopping";
+    const isHost = (currentHost === username);
+    const hasHost = (currentHost !== null);
 
-    // 1. Handle the Hero Card (Colors/Glow)
-    const heroCard = document.querySelector(".server-hero");
-    if (heroCard) {
-      heroCard.classList.remove(
-        "stopped",
-        "starting",
-        "running",
-        "crashed",
-        "stopping",
-      );
-      heroCard.classList.add(status);
+    UI.setServerStatus(status, lastServerUptime, isHost, hasHost);
+    if (status === "running" || status === "starting") {
+      void refreshStatus();
     }
 
-    // 2. Lock/Unlock Resources
+    const isBusy =
+      status === "starting" || status === "running" || status === "stopping";
+
+    // 1. Lock/Unlock Resources
     // This selects all sliders, preset buttons, and the JAR selection button
     const configElements = document.querySelectorAll(
-      ".ch-slider, .preset-btn, .field-input, #select-jar-btn",
+      ".ch-slider, .preset-btn, #browse-jar-btn, #download-jar-btn, #java-path",
     );
 
     configElements.forEach((el) => {
@@ -553,19 +643,7 @@
       }
     });
 
-    // 3. Toggle Start/Stop Buttons
-    const startBtn = document.getElementById("start-btn");
-    const stopBtn = document.getElementById("stop-btn");
-
-    if (isBusy) {
-      startBtn.classList.add("hidden");
-      stopBtn.classList.remove("hidden");
-      // Disable Stop button ONLY if it's still 'starting' to prevent corruption
-      stopBtn.disabled = status === "starting";
-    } else {
-      startBtn.classList.remove("hidden");
-      stopBtn.classList.add("hidden");
-    }
+    // Start/Stop visibility is handled by UI.setServerStatus above.
   }
 
   // ── Go! ───────────────────────────────────────────────────────────

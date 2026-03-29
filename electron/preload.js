@@ -6,16 +6,10 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
-  /**
-   * Open a native file-picker dialog.
-   * @param {"jar"|"exe"} fileType
-   * @returns {Promise<string|null>} selected path or null
-   */
-  openFile: (fileType) => ipcRenderer.invoke("open-file", fileType),
-
-  /**
-   * Get the OS home directory.
-   * @returns {Promise<string>}
-   */
-  getHomeDir: () => ipcRenderer.invoke("get-home-dir"),
+  openFile:      (fileType) => ipcRenderer.invoke("open-file", fileType),
+  getHomeDir:    () => ipcRenderer.invoke("get-home-dir"),
+  windowControl: (action) => ipcRenderer.invoke("window-control", action),
+  minimize: () => ipcRenderer.send('window-minimize'),
+  maximize: () => ipcRenderer.send('window-maximize'),
+  close: () => ipcRenderer.send('window-close')
 });

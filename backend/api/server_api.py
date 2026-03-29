@@ -1,7 +1,10 @@
 """Server management API — start, stop, status, console, players."""
 
 import _thread
+import queue as std_queue
 import re
+import threading
+import time
 from pathlib import Path
 from flask import Blueprint, jsonify, request
 from backend.state import state
@@ -10,10 +13,47 @@ from backend.utils.logger import AppLogger
 
 bp = Blueprint("server", __name__)
 
+_mc_stdout_pump_started = False
+
+
+def ensure_mc_stdout_pump() -> None:
+    """Start a greenlet that drains MC stdout from a Queue and emits over Socket.IO.
+
+    Subprocess log lines are read on a real OS thread; Flask-SocketIO + eventlet does not
+    reliably deliver ``emit`` calls from that thread. The queue + pump runs emits on the hub.
+    Log persistence and RUNNING transition happen in the reader thread (see manager).
+    """
+    global _mc_stdout_pump_started
+
+    state.ensure_mc_stdout_queue()
+    if _mc_stdout_pump_started:
+        return
+    _mc_stdout_pump_started = True
+    q = state.ensure_mc_stdout_queue()
+
+    def _pump() -> None:
+        while True:
+            try:
+                while True:
+                    line = q.get_nowait()
+                    # Log already in state.server_log from the reader thread; only fan out to Socket.IO.
+                    _fanout_mc_line(line)
+            except std_queue.Empty:
+                pass
+            time.sleep(0.02)
+
+    threading.Thread(target=_pump, daemon=True).start()
+
 
 def _emit_socket(event: str, payload: dict) -> None:
-    """Emit to all connected clients (omit ``to``/``room``). Works from the MC log OS thread."""
+    """Emit to all connected clients (call from request or eventlet context)."""
     socketio.emit(event, payload, namespace="/")
+
+
+def _fanout_mc_line(line: str) -> None:
+    """Push one MC line to Socket.IO clients + player list (no append_log — reader thread owns that)."""
+    _emit_socket("server_log", {"line": line})
+    _parse_player_event(line)
 
 
 def _emit_log(line: str) -> None:
@@ -59,12 +99,21 @@ def get_status():
 
 @bp.route("/log", methods=["GET"])
 def get_log():
-    return jsonify({"lines": state.server_log})
+    lines = state.server_log
+    total = len(lines)
+    since = request.args.get("since", type=int)
+    if since is None:
+        return jsonify({"lines": lines, "total": total})
+    if since < 0:
+        since = 0
+    return jsonify({"lines": lines[since:], "total": total})
 
 
 @bp.route("/start", methods=["POST"])
 def start_server():
     from backend.server.manager import MinecraftServer, ServerConfig, ServerStatus
+
+    ensure_mc_stdout_pump()
 
     data      = request.get_json(force=True)
     jar_path  = data.get("jar_path", "")

@@ -1,7 +1,9 @@
 """Group API — friend list, host election, chat."""
 
+import time
 from flask import Blueprint, jsonify, request
 from backend.state import state
+from backend.config.settings import DISCOVERY_PORT
 
 bp = Blueprint("group", __name__)
 
@@ -15,13 +17,12 @@ def get_peers():
     peers = []
     for p in gm.get_peers():
         peers.append({
-            "username":  p.username,
-            "ip":        p.ip,
-            "online":    p.online,
-            "is_host":   p.username == host,
-            "score":     p.benchmark.composite if p.benchmark else None,
+            "username": p.username,
+            "ip":       p.ip,
+            "online":   p.online,
+            "is_host":  p.username == host,
+            "score":    p.benchmark.composite if p.benchmark else None,
         })
-    # Add self
     peers.insert(0, {
         "username": state.username,
         "ip":       state.local_ip,
@@ -33,8 +34,62 @@ def get_peers():
     return jsonify(peers)
 
 
+@bp.route("/peers/pending", methods=["GET"])
+def get_pending_requests():
+    return jsonify(state.pending_friend_requests)
+
+
+@bp.route("/peers/request", methods=["POST"])
+def request_friend():
+    """Send a friend request. Relay-based if no IP given, direct otherwise (LAN)."""
+    data     = request.get_json(force=True)
+    username = data.get("username", "").strip()
+    ip       = data.get("ip", "").strip()
+    port     = int(data.get("port", DISCOVERY_PORT))
+
+    if not username:
+        return jsonify({"ok": False, "error": "Username is required"}), 400
+    if not state.group_manager:
+        return jsonify({"ok": False, "error": "Not connected to group network"}), 400
+
+    result = state.group_manager.send_friend_request(username, direct_ip=ip, direct_port=port)
+    return jsonify(result), (200 if result["ok"] else 400)
+
+
+@bp.route("/peers/accept", methods=["POST"])
+def accept_friend():
+    data     = request.get_json(force=True)
+    username = data.get("username", "").strip()
+
+    req = next((r for r in state.pending_friend_requests if r["username"] == username), None)
+    if not req:
+        return jsonify({"ok": False, "error": "No pending request from that user"}), 404
+
+    state.pending_friend_requests = [
+        r for r in state.pending_friend_requests if r["username"] != username
+    ]
+    if state.group_manager:
+        state.group_manager.accept_friend_request(username, req["ip"], req["port"])
+    return jsonify({"ok": True})
+
+
+@bp.route("/peers/decline", methods=["POST"])
+def decline_friend():
+    data     = request.get_json(force=True)
+    username = data.get("username", "").strip()
+
+    req = next((r for r in state.pending_friend_requests if r["username"] == username), None)
+    state.pending_friend_requests = [
+        r for r in state.pending_friend_requests if r["username"] != username
+    ]
+    if req and state.group_manager:
+        state.group_manager.decline_friend_request(username, req["ip"], req["port"])
+    return jsonify({"ok": True})
+
+
 @bp.route("/peers", methods=["POST"])
 def add_peer():
+    """Direct add — kept for backward compat / programmatic use."""
     data = request.get_json(force=True)
     name = data.get("username", "").strip()
     ip   = data.get("ip", "").strip()
@@ -78,10 +133,8 @@ def send_chat():
         return jsonify({"ok": False}), 400
     if state.group_manager:
         state.group_manager.send_chat(text)
-    import time
     msg = {"sender": state.username, "text": text, "ts": time.time()}
     state.chat_history.append(msg)
-    # Emit to all browser clients via SocketIO
     from backend.app import socketio
     socketio.emit("chat", msg)
     return jsonify({"ok": True})

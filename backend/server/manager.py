@@ -5,6 +5,7 @@ and supports graceful stop.
 """
 
 import os
+import queue as std_queue
 import re
 import subprocess
 import threading
@@ -15,8 +16,19 @@ from typing import Callable
 
 import psutil
 
+from backend.state import state as app_state
 from backend.utils.logger import AppLogger
 
+# eventlet.monkey_patch() replaces threading.Thread with green threads.
+# Green threads block the entire hub when doing subprocess pipe readline()
+# because the C-level read() syscall bypasses eventlet's hooks.
+# We must use the *original* OS-level Thread for any thread that blocks on
+# subprocess IO — otherwise the Flask server freezes solid.
+try:
+    from eventlet.patcher import original as _ev_original
+    _NativeThread = _ev_original('threading').Thread
+except Exception:
+    _NativeThread = threading.Thread  # fallback (non-eventlet environments)
 
 # Minecraft version → minimum Java major version required
 _MC_JAVA_REQUIREMENTS = {21: 21, 20: 21, 19: 17, 18: 17, 17: 17, 16: 16, 8: 8}
@@ -196,6 +208,7 @@ class MinecraftServer:
 
         self._start_time: float | None = None
         self._stop_lock = threading.Lock()
+        self._stdout_queue: std_queue.Queue[str] | None = None
 
     @property
     def status(self) -> ServerStatus:
@@ -260,9 +273,13 @@ class MinecraftServer:
             self._set_status(ServerStatus.CRASHED)
             return False
 
+        self._stdout_queue = app_state.ensure_mc_stdout_queue()
         self._start_time = time.time()
-        threading.Thread(target=self._read_output, daemon=True).start()
-        threading.Thread(target=self._monitor_process, daemon=True).start()
+        # MUST use _NativeThread here — see module-level comment.
+        # threading.Thread under eventlet is a green thread; readline() on a
+        # subprocess pipe blocks the whole eventlet hub and freezes Flask.
+        _NativeThread(target=self._read_output, daemon=True).start()
+        _NativeThread(target=self._monitor_process, daemon=True).start()
         return True
 
     def stop(self):
@@ -339,15 +356,16 @@ class MinecraftServer:
     def resource_usage(self) -> dict:
         if not self._process or self._process.poll() is not None:
             return {}
+        pid = self._process.pid
         try:
-            proc = psutil.Process(self._process.pid)
-            return {
-                "cpu_percent": proc.cpu_percent(interval=0.1),
-                "ram_mb": proc.memory_info().rss / 1024 / 1024,
-                "pid": self._process.pid,
-            }
+            proc = psutil.Process(pid)
+            # interval=0 avoids blocking the Flask/eventlet thread for 100ms every poll.
+            cpu = proc.cpu_percent(interval=0)
+            ram = proc.memory_info().rss / 1024 / 1024
+            return {"cpu_percent": cpu, "ram_mb": ram, "pid": pid}
         except Exception:
-            return {}
+            # Still expose PID so the UI can show the process is alive if psutil fails.
+            return {"cpu_percent": None, "ram_mb": None, "pid": pid}
 
     # ------------------------------------------------------------------
     # Internal
@@ -357,8 +375,16 @@ class MinecraftServer:
         if self.on_status_change:
             self.on_status_change(s.name.lower())
 
+    def promote_to_running_from_log(self) -> None:
+        """Called when the Done line appears (stdout reader thread; idempotent)."""
+        if self._status != ServerStatus.STARTING:
+            return
+        self._log.info("Match found: Server is RUNNING")
+        self._set_status(ServerStatus.RUNNING)
+
     def _read_output(self) -> None:
-        # Runs in a real OS thread — do not call eventlet.sleep here (can deadlock the hub).
+        # Runs in a real OS thread. Push lines to the queue; eventlet pump emits over Socket.IO.
+        q = self._stdout_queue
         while True:
             line = self._process.stdout.readline()
             if not line:
@@ -366,18 +392,29 @@ class MinecraftServer:
 
             clean_line = line.strip()
             self._log.info(f"[MC] {clean_line}")
+            # Always persist for GET /api/server/log (UI polls; Socket.IO is unreliable from threads).
+            app_state.append_log(clean_line)
 
-            if self.on_log_line:
+            if q is not None:
                 try:
-                    self.on_log_line(clean_line)
-                except Exception:
-                    self._log.exception("on_log_line failed; continuing log reader")
-
-            if _MC_DONE_LINE.search(clean_line) or (
-                "Done" in clean_line and "!" in clean_line
-            ):
-                self._log.info("Match found: Server is RUNNING")
-                self._set_status(ServerStatus.RUNNING)
+                    q.put_nowait(clean_line)
+                except std_queue.Full:
+                    self._log.warning("MC stdout queue full; dropping line")
+                if _MC_DONE_LINE.search(clean_line) or (
+                    "Done" in clean_line and "!" in clean_line
+                ):
+                    self.promote_to_running_from_log()
+            else:
+                if self.on_log_line:
+                    try:
+                        self.on_log_line(clean_line)
+                    except Exception:
+                        self._log.exception("on_log_line failed; continuing log reader")
+                if _MC_DONE_LINE.search(clean_line) or (
+                    "Done" in clean_line and "!" in clean_line
+                ):
+                    self._log.info("Match found: Server is RUNNING")
+                    self._set_status(ServerStatus.RUNNING)
 
     def _monitor_process(self) -> None:
         self._process.wait()

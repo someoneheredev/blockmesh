@@ -1,17 +1,20 @@
 {
-  "name": "creeperhost",
+  "name": "blockmesh",
   "version": "1.0.0",
   "description": "Host Minecraft with your friends",
   "main": "electron/main.js",
   "scripts": {
-    "start":   "electron .",
-    "dev":     "electron . --dev",
-    "package": "electron-builder --win --x64"
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "package": "electron-builder --win --x64",
+    "build": "electron-builder"
   },
   "build": {
-    "appId": "com.creeperhost.app",
-    "productName": "CreeperHost",
-    "directories": { "output": "dist" },
+    "appId": "com.blockmesh.app",
+    "productName": "BlockMesh",
+    "directories": {
+      "output": "dist"
+    },
     "files": [
       "electron/**/*",
       "frontend/**/*",
@@ -20,12 +23,19 @@
       "!backend/**/__pycache__"
     ],
     "extraResources": [
-      { "from": "backend", "to": "backend" }
+      {
+        "from": "backend",
+        "to": "backend"
+      }
     ],
     "win": {
       "target": "nsis",
-      "icon": "frontend/static/img/icon.ico"
+      "icon": "build/icon.ico"
     },
+    "asar": true,
+    "asarUnpack": [
+      "**/assets/**"
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
@@ -33,6 +43,7 @@
   },
   "devDependencies": {
     "electron": "^30.0.0",
-    "electron-builder": "^24.0.0"
+    "electron-builder": "^24.13.3",
+    "electron-packager": "^17.1.2"
   }
 }

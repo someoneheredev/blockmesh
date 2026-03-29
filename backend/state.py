@@ -5,6 +5,8 @@ Imported by every API blueprint.
 """
 
 from __future__ import annotations
+
+import queue as std_queue
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -26,8 +28,16 @@ class AppState:
     server_log: list[str] = []        # rolling last-500 MC console lines
     players_online: list[str] = []    # current connected MC players
     chat_history: list[dict] = []     # [{sender, text, ts}]
+    pending_friend_requests: list[dict] = []  # [{username, ip, port, ts}]
 
     _MAX_LOG = 500
+    # Filled by OS thread reading MC stdout; drained by an eventlet greenlet (Socket.IO).
+    _mc_stdout_queue: std_queue.Queue[str] | None = None
+
+    def ensure_mc_stdout_queue(self) -> std_queue.Queue[str]:
+        if self._mc_stdout_queue is None:
+            self._mc_stdout_queue = std_queue.Queue(maxsize=10_000)
+        return self._mc_stdout_queue
 
     @classmethod
     def append_log(cls, line: str) -> None:

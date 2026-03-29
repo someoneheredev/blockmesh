@@ -1,20 +1,27 @@
 """Flask application factory."""
 
-import eventlet
-eventlet.monkey_patch()
+import os
+import sys
 
 from flask import Flask
 from flask_socketio import SocketIO
 from flask_cors import CORS
 
-socketio = SocketIO(cors_allowed_origins="*", async_mode="eventlet")
+socketio = SocketIO(cors_allowed_origins="*", async_mode="threading")
 
+def create_app(template_folder=None, static_folder=None) -> Flask:
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
 
-def create_app() -> Flask:
+    if template_folder is None:
+        template_folder = os.path.join(base_path, "templates")
+
+    if static_folder is None:
+        static_folder = os.path.join(base_path, "static")
+
     app = Flask(
         __name__,
-        template_folder="../frontend/templates",
-        static_folder="../frontend/static",
+        template_folder=template_folder,
+        static_folder=static_folder
     )
     app.config["SECRET_KEY"] = "creeperhost-dev-secret"
 
