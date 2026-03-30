@@ -2218,3 +2218,36 @@ button.loading {
   flex-shrink: 0;
   margin-left: auto;
 }
+/* ══════════════════════════════════════════════════════════════
+   RECONNECTION BANNER
+══════════════════════════════════════════════════════════════ */
+.reconnect-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: #b45309;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+}
+.reconnect-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fde68a;
+  animation: reconnect-pulse 1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes reconnect-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.7); }
+}

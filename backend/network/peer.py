@@ -3,6 +3,7 @@ import json
 import socket
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
 from backend.config.settings import DISCOVERY_PORT, HEARTBEAT_INTERVAL
@@ -221,8 +222,19 @@ class PeerClient:
         return self.send(host, port, msg)
 
     def broadcast(self, peers: list[dict], msg: Message) -> None:
-        for peer in peers:
-            self.send(peer["ip"], peer.get("port", DISCOVERY_PORT), msg)
+        """Send a message to all peers in parallel."""
+        if not peers:
+            return
+        with ThreadPoolExecutor(max_workers=min(len(peers), 8)) as pool:
+            futures = [
+                pool.submit(self.send, peer["ip"], peer.get("port", DISCOVERY_PORT), msg)
+                for peer in peers
+            ]
+            for f in futures:
+                try:
+                    f.result()
+                except Exception:
+                    pass
 
 
 class HeartbeatService:

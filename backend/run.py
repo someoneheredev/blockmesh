@@ -99,26 +99,29 @@ def main():
     if state.username:
         from backend.network.group import GroupManager
         from backend.app import socketio
+        from backend.api.group_api import FRIEND_REQUEST_TTL
 
         gm = GroupManager(state.username, state.local_ip, discovery_port)
-        
+
         def _on_peers_changed():
             socketio.emit("peers_update")
 
         def _on_host_changed(host):
             socketio.emit("host_changed", {"host": host})
 
+        def _on_host_failing(host):
+            socketio.emit("host_failing", {"host": host})
+
         def _on_chat(sender, text):
             import time
             msg = {"sender": sender, "text": text, "ts": time.time()}
-            state.chat_history.append(msg)
+            state.append_chat(msg)
             socketio.emit("chat", msg)
 
         def _on_friend_request(sender: str, ip: str, port: int) -> None:
             import time as _time
             req = {"username": sender, "ip": ip, "port": port, "ts": _time.time()}
-            if not any(r["username"] == sender for r in state.pending_friend_requests):
-                state.pending_friend_requests.append(req)
+            state.add_pending_request(req)
             socketio.emit("friend_request", req)
 
         def _on_friend_accepted(username: str) -> None:
@@ -127,16 +130,34 @@ def main():
         def _on_friend_declined(username: str) -> None:
             socketio.emit("friend_declined", {"username": username})
 
-        gm.on_peers_changed = _on_peers_changed
-        gm.on_host_changed = _on_host_changed
-        gm.on_chat_message = _on_chat
-        gm.on_friend_request  = _on_friend_request
-        gm.on_friend_accepted = _on_friend_accepted
-        gm.on_friend_declined = _on_friend_declined
+        def _on_peer_server_status(payload: dict) -> None:
+            state.peer_server_status = payload
+            socketio.emit("peer_server_status", payload)
+
+        def _on_relay_status_changed(connected: bool) -> None:
+            socketio.emit("relay_status", {"connected": connected})
+
+        gm.on_peers_changed       = _on_peers_changed
+        gm.on_host_changed        = _on_host_changed
+        gm.on_host_failing        = _on_host_failing
+        gm.on_chat_message        = _on_chat
+        gm.on_friend_request      = _on_friend_request
+        gm.on_friend_accepted     = _on_friend_accepted
+        gm.on_friend_declined     = _on_friend_declined
+        gm.on_peer_server_status  = _on_peer_server_status
+        gm.on_relay_status_changed = _on_relay_status_changed
         gm.start()
         state.group_manager = gm
 
-        # _start_relay_registration(state.username, discovery_port, log)
+        # Background thread: prune expired friend requests every 60 seconds.
+        def _cleanup_loop() -> None:
+            import time as _t
+            while True:
+                _t.sleep(60)
+                state.cleanup_pending_requests(FRIEND_REQUEST_TTL)
+
+        threading.Thread(target=_cleanup_loop, daemon=True, name="friend-req-cleanup").start()
+
         log.info(f"GroupManager started for '{state.username}' on port {discovery_port}")
         
     from backend.app import create_app, socketio

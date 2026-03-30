@@ -12,11 +12,7 @@ FRIEND_REQUEST_TTL = 86400  # 24 hours
 
 def _cleanup_expired_requests() -> None:
     """Remove friend requests older than TTL_SECONDS."""
-    now = time.time()
-    state.pending_friend_requests = [
-        r for r in state.pending_friend_requests
-        if now - r.get("ts", now) < FRIEND_REQUEST_TTL
-    ]
+    state.cleanup_pending_requests(FRIEND_REQUEST_TTL)
 
 
 def _get_relay_status() -> dict:
@@ -133,13 +129,10 @@ def accept_friend():
     data     = request.get_json(force=True)
     username = data.get("username", "").strip()
 
-    req = next((r for r in state.pending_friend_requests if r["username"] == username), None)
+    req = state.remove_pending_request(username)
     if not req:
         return jsonify({"ok": False, "error": "No pending request from that user"}), 404
 
-    state.pending_friend_requests = [
-        r for r in state.pending_friend_requests if r["username"] != username
-    ]
     if state.group_manager:
         state.group_manager.accept_friend_request(username, req["ip"], req["port"])
     return jsonify({"ok": True})
@@ -150,10 +143,7 @@ def decline_friend():
     data     = request.get_json(force=True)
     username = data.get("username", "").strip()
 
-    req = next((r for r in state.pending_friend_requests if r["username"] == username), None)
-    state.pending_friend_requests = [
-        r for r in state.pending_friend_requests if r["username"] != username
-    ]
+    req = state.remove_pending_request(username)
     if req and state.group_manager:
         state.group_manager.decline_friend_request(username, req["ip"], req["port"])
     return jsonify({"ok": True})
@@ -206,7 +196,7 @@ def send_chat():
     if state.group_manager:
         state.group_manager.send_chat(text)
     msg = {"sender": state.username, "text": text, "ts": time.time()}
-    state.chat_history.append(msg)
+    state.append_chat(msg)
     from backend.app import socketio
     socketio.emit("chat", msg)
     return jsonify({"ok": True})

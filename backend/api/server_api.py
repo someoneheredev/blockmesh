@@ -62,19 +62,34 @@ def _emit_log(line: str) -> None:
     _tps_value = _parse_tps(line)
 
 
+def _broadcast_server_status_to_peers(status: str) -> None:
+    """If we are the host, push our server status to all peers over P2P."""
+    gm = state.group_manager
+    if not gm:
+        return
+    if gm.get_current_host() != state.username:
+        return
+    srv = state.mc_server
+    tps = _tps_value
+    uptime = srv.uptime_str() if srv else None
+    gm.send_server_status_update(status, state.get_players(), tps, uptime)
+
+
 def _parse_player_event(line: str) -> None:
     join  = re.search(r'(\w+) joined the game', line)
     leave = re.search(r'(\w+) left the game',   line)
     if join:
         name = join.group(1)
-        if name not in state.players_online:
-            state.players_online.append(name)
-            _emit_socket("players", {"players": state.players_online})
+        if state.add_player(name):
+            players = state.get_players()
+            _emit_socket("players", {"players": players})
+            _broadcast_server_status_to_peers("running")
     elif leave:
         name = leave.group(1)
-        if name in state.players_online:
-            state.players_online.remove(name)
-            _emit_socket("players", {"players": state.players_online})
+        if state.remove_player(name):
+            players = state.get_players()
+            _emit_socket("players", {"players": players})
+            _broadcast_server_status_to_peers("running")
 
 
 def _parse_tps(line: str) -> float:
@@ -154,16 +169,19 @@ def start_server():
     state.mc_server = srv
 
     def _on_status(status_str):
-            _emit_socket("server_status", {"status": status_str})
+        _emit_socket("server_status", {"status": status_str})
 
-            if status_str == "running":
-                if state.group_manager:
-                    state.group_manager.announce_host(state.username)
-                    state.group_manager.send_server_info(state.local_ip, 25565)
+        if status_str == "running":
+            if state.group_manager:
+                state.group_manager.announce_host(state.username)
+                state.group_manager.send_server_info(state.local_ip, 25565)
 
-            if status_str in ("stopped", "crashed"):
-                state.players_online.clear()
-                _emit_socket("players", {"players": []})
+        if status_str in ("stopped", "crashed"):
+            state.clear_players()
+            _emit_socket("players", {"players": []})
+
+        # Broadcast status change to all peers so they can show it in their UI.
+        _broadcast_server_status_to_peers(status_str)
                 
     srv.on_status_change = _on_status
     srv.on_log_line      = _emit_log

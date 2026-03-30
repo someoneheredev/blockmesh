@@ -128,6 +128,9 @@ class RelayClient:
         return self._run(self._lookup_async(target_username))
 
 
+_RELAY_CACHE_TTL = 300  # seconds before a cached relay lookup expires
+
+
 class GroupManager:
     """Manages the local peer list, heartbeats, host election, and relay matchmaking."""
 
@@ -135,7 +138,7 @@ class GroupManager:
         self,
         username: str,
         local_ip: str,
-        discovery_port: int, 
+        discovery_port: int,
         relay_url: str = "ws://57.131.35.100:8765",
     ) -> None:
         self.username = username
@@ -147,8 +150,11 @@ class GroupManager:
         self._current_host: str | None = None
         self._local_benchmark: BenchmarkResult | None = None
 
-        self._server = PeerServer(username, port=discovery_port) 
-        self._client = PeerClient(username)        
+        # Cache relay lookups: {username: (result_dict, timestamp)}
+        self._relay_cache: dict[str, tuple[dict, float]] = {}
+
+        self._server = PeerServer(username, port=discovery_port)
+        self._client = PeerClient(username)
         self._heartbeat = HeartbeatService(
             self._client,
             self._active_peer_dicts,
@@ -161,10 +167,15 @@ class GroupManager:
 
         self.on_peers_changed: Callable[[], None] | None = None
         self.on_host_changed: Callable[[str | None], None] | None = None
+        self.on_host_failing: Callable[[str | None], None] | None = None
         self.on_chat_message: Callable[[str, str], None] | None = None
         self.on_friend_request: Callable[[str, str, int], None] | None = None
         self.on_friend_accepted: Callable[[str], None] | None = None
         self.on_friend_declined: Callable[[str], None] | None = None
+        # Called when a peer-broadcast server status arrives (non-host peers).
+        self.on_peer_server_status: Callable[[dict], None] | None = None
+        # Called when relay connection status changes: True=connected, False=lost.
+        self.on_relay_status_changed: Callable[[bool], None] | None = None
 
         self._server.on_message(self._handle_message)
         self._load_saved_peers()
@@ -231,10 +242,23 @@ class GroupManager:
 
     def trigger_failover(self) -> str | None:
         self._log.warning(f"Failover triggered — previous host: {self._current_host}")
+        # Notify UI immediately so it shows "switching hosts" rather than silence.
+        if self.on_host_failing:
+            self.on_host_failing(self._current_host)
         new_host = self.elect_best_host()
         if new_host:
             self.announce_host(new_host)
         return new_host
+
+    def send_server_status_update(self, status: str, players: list[str], tps: float, uptime: str | None = None) -> None:
+        """Broadcast the host's Minecraft server status to all peers."""
+        msg = Message("server_status_update", self.username, {
+            "status": status,
+            "players": players,
+            "tps": tps,
+            "uptime": uptime,
+        })
+        self._client.broadcast(self._active_peer_dicts(), msg)
 
     def send_chat(self, text: str) -> None:
         msg = Message("chat", self.username, {"text": text})
@@ -254,7 +278,20 @@ class GroupManager:
                 "ip": self.local_ip,
                 "port": self._server.port,
             }
-        return self._relay.lookup(username)
+        return self._cached_relay_lookup(username)
+
+    def _cached_relay_lookup(self, username: str) -> dict | None:
+        """Relay lookup with a 5-minute in-memory cache to reduce latency."""
+        cached = self._relay_cache.get(username)
+        if cached:
+            result, ts = cached
+            if time.time() - ts < _RELAY_CACHE_TTL:
+                self._log.debug(f"Relay cache hit for {username}")
+                return result
+        result = self._relay.lookup(username)
+        if result:
+            self._relay_cache[username] = (result, time.time())
+        return result
 
     def refresh_peer_from_relay(self, username: str) -> Peer | None:
         data = self.lookup_peer_via_relay(username)
@@ -287,34 +324,50 @@ class GroupManager:
         return self.refresh_peer_from_relay(username)
 
     def send_friend_request(self, target_username: str, direct_ip: str = "", direct_port: int = 0) -> dict:
-        """Send a friend request via relay lookup, or directly if IP supplied."""
+        """Send a friend request via relay lookup (cached), or directly if IP supplied.
+        If direct TCP fails and a relay address was used, a fresh lookup is attempted."""
         if target_username == self.username:
-            return {"ok": False, "error": "You can\'t add yourself."}
+            return {"ok": False, "error": "You can't add yourself."}
         if target_username in self._peers:
-            return {"ok": False, "error": f"\'{target_username}\' is already in your group."}
+            return {"ok": False, "error": f"'{target_username}' is already in your group."}
 
         if direct_ip:
             ip = direct_ip
             port = direct_port or DISCOVERY_PORT
+            used_relay = False
         else:
-            peer_data = self._relay.lookup(target_username)
+            peer_data = self._cached_relay_lookup(target_username)
             if not peer_data:
                 return {
                     "ok": False,
-                    "error": f"\'{target_username}\' wasn\'t found. Make sure they have BlockMesh open.",
+                    "error": f"'{target_username}' wasn't found. Make sure they have BlockMesh open.",
                 }
             ip = peer_data.get("ip")
             port = peer_data.get("port", DISCOVERY_PORT)
+            used_relay = True
 
         msg = Message("friend_request", self.username, {
             "from_ip": self.local_ip,
             "from_port": self._server.port,
         })
         success = self._client.send(ip, port, msg)
+
+        # If direct send failed and we used a cached relay result, retry with a fresh lookup.
+        if not success and used_relay:
+            self._log.info(f"Direct send to {target_username} failed; refreshing relay lookup...")
+            self._relay_cache.pop(target_username, None)
+            fresh = self._relay.lookup(target_username)
+            if fresh:
+                self._relay_cache[target_username] = (fresh, time.time())
+                new_ip = fresh.get("ip")
+                new_port = fresh.get("port", DISCOVERY_PORT)
+                if new_ip and (new_ip != ip or new_port != port):
+                    success = self._client.send(new_ip, new_port, msg)
+
         if not success:
             return {
                 "ok": False,
-                "error": f"Couldn\'t reach \'{target_username}\'. Are they online? Ports open?",
+                "error": f"Couldn't reach '{target_username}'. Are they online? Ports open?",
             }
 
         self._log.info(f"Friend request sent to {target_username} at {ip}:{port}")
@@ -342,23 +395,63 @@ class GroupManager:
         self._client.send(requester_ip, requester_port, msg)
 
     def _start_relay_registration(self) -> None:
-            if not self.relay_url:
-                return
+        if not self.relay_url:
+            return
 
-            def _run() -> None:
-                # We use a fresh event loop for this background thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(self._relay._register_async(self._relay_stop))
-                except Exception as e:
-                    self._log.error(f"Relay thread crashed: {e}")
-                finally:
-                    loop.close()
+        def _run() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self._register_with_status(self._relay_stop))
+            except Exception as e:
+                self._log.error(f"Relay thread crashed: {e}")
+            finally:
+                loop.close()
 
-            self._relay_stop.clear()
-            self._relay_thread = threading.Thread(target=_run, daemon=True)
-            self._relay_thread.start()
+        self._relay_stop.clear()
+        self._relay_thread = threading.Thread(target=_run, daemon=True)
+        self._relay_thread.start()
+
+    async def _register_with_status(self, stop_event: threading.Event) -> None:
+        """Wraps relay registration and emits status change events on connect/disconnect."""
+        _connected = False
+        if ws_connect is None:
+            self._log.warning("RelayClient requires websockets to be installed")
+            return
+
+        while not stop_event.is_set():
+            self._log.info(f"Connecting to relay at {self.relay_url}...")
+            try:
+                async with ws_connect(self.relay_url) as ws:
+                    reg_data = {
+                        "action": "register",
+                        "username": self.username,
+                        "port": self._server.port,
+                    }
+                    await ws.send(json.dumps(reg_data))
+                    raw = await ws.recv()
+                    self._log.info(f"Relay: {raw}")
+
+                    if not _connected:
+                        _connected = True
+                        if self.on_relay_status_changed:
+                            self.on_relay_status_changed(True)
+
+                    while not stop_event.is_set():
+                        try:
+                            await asyncio.wait_for(ws.recv(), timeout=30.0)
+                        except asyncio.TimeoutError:
+                            self._log.debug("Refreshing relay registration (TTL)...")
+                            await ws.send(json.dumps(reg_data))
+
+            except Exception as e:
+                if not stop_event.is_set():
+                    if _connected:
+                        _connected = False
+                        if self.on_relay_status_changed:
+                            self.on_relay_status_changed(False)
+                    self._log.warning(f"Relay connection lost ({e}). Retrying in 10s...")
+                    await asyncio.sleep(10)
         
     def _handle_message(self, msg: Message) -> None:
         sender = msg.sender
@@ -403,6 +496,13 @@ class GroupManager:
             self._log.info(f"{sender} declined your friend request")
             if self.on_friend_declined:
                 self.on_friend_declined(sender)
+
+        elif msg.kind == "server_status_update":
+            # Only process if the sender is the current host (prevents spoofing).
+            if sender == self._current_host:
+                self._log.debug(f"Server status from host {sender}: {msg.payload.get('status')}")
+                if self.on_peer_server_status:
+                    self.on_peer_server_status(msg.payload)
 
     def _update_peer_from_heartbeat(self, username: str, payload: dict) -> None:
         was_current_host_online = self._is_host_online()

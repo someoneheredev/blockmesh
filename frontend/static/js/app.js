@@ -24,6 +24,15 @@
   // ── SocketIO ────────────────────────────────────────────────────
   const socket = io();
 
+  // Reconnection banner
+  const _reconnectBanner = document.getElementById("reconnect-banner");
+  socket.on("disconnect", () => {
+    _reconnectBanner.classList.remove("hidden");
+  });
+  socket.on("connect", () => {
+    _reconnectBanner.classList.add("hidden");
+  });
+
   socket.on("system_msg", ({ message, type }) => {
     let formattedMsg = message;
     if (message.includes("[!]"))
@@ -64,6 +73,27 @@
 
   socket.on("friend_declined", ({ username: u }) => {
     UI.toast(`${u} declined your request.`, "default");
+  });
+
+  // Host going offline before election completes — show immediate feedback.
+  socket.on("host_failing", ({ host }) => {
+    UI.appendSystemMsg(`Host ${host} went offline. Electing new host...`);
+    UI.toast(`Host ${host} went offline. Switching...`, "info", 4000);
+  });
+
+  // Server status broadcast from the host peer — shown to non-hosts.
+  socket.on("peer_server_status", (payload) => {
+    const isHost = currentHost === username;
+    if (isHost) return; // Host uses its own local status
+    UI.setServerStatus(payload.status, payload.uptime, false, true);
+    if (payload.players) UI.renderPlayerChips(payload.players);
+  });
+
+  // Relay connection status changes.
+  socket.on("relay_status", ({ connected }) => {
+    if (!connected) {
+      UI.toast("Relay disconnected — retrying...", "info", 3000);
+    }
   });
 
   // ── Boot ────────────────────────────────────────────────────────
