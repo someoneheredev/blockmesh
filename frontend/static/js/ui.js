@@ -55,6 +55,11 @@ const PRESETS = {
 
 const UI = {
   // ── Tab navigation ─────────────────────────────────────────────
+
+  lastStatus: null,
+  lastPlayersJson: null,
+  lastPeersJson: null,
+
   switchTab(tabId) {
     document.querySelectorAll(".nav-item").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.tab === tabId);
@@ -143,6 +148,11 @@ const UI = {
   },
 
   renderPlayerChips(players) {
+    const currentData = JSON.stringify(players);
+
+    if (this.lastPlayersJson === currentData) return;
+    this.lastPlayersJson = currentData;
+
     const wrap = document.getElementById("hero-player-chips");
     wrap.innerHTML = "";
     players.forEach((p) => {
@@ -151,12 +161,15 @@ const UI = {
       chip.textContent = p;
       wrap.appendChild(chip);
     });
+
     const badge = document.getElementById("online-badge");
     const count = players.length;
-    badge.textContent = count;
-    badge.classList.toggle("hidden", count === 0);
-  },
 
+    if (badge.textContent !== String(count)) {
+      badge.textContent = count;
+      badge.classList.toggle("hidden", count === 0);
+    }
+  },
   // ── Resource presets ───────────────────────────────────────────
   activatePreset(preset) {
     const cfg = PRESETS[preset];
@@ -203,6 +216,10 @@ const UI = {
 
   // ── Peers ──────────────────────────────────────────────────────
   renderPeers(peers, selfUsername) {
+    const currentData = JSON.stringify(peers);
+    if (this.lastPeersJson === currentData) return;
+    this.lastPeersJson = currentData;
+
     const list = document.getElementById("peer-list");
     list.innerHTML = "";
     let online = 0;
@@ -210,11 +227,13 @@ const UI = {
       if (p.online || p.is_self) online++;
       list.appendChild(UI._buildPeerRow(p, selfUsername));
     });
-    const badge = document.getElementById("online-badge");
-    badge.textContent = online;
-    badge.classList.toggle("hidden", online <= 1);
-  },
 
+    const badge = document.getElementById("online-badge");
+    if (badge.textContent !== String(online)) {
+      badge.textContent = online;
+      badge.classList.toggle("hidden", online <= 1);
+    }
+  },
   _buildPeerRow(p, selfUsername) {
     const div = document.createElement("div");
     const isHost = p.is_host;
