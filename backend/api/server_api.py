@@ -1,4 +1,4 @@
-"""Server management API — start, stop, status, console, players."""
+"""Server management API — start, stop, status, console, players, backups, properties, whitelist."""
 
 import _thread
 import queue as std_queue
@@ -10,19 +10,16 @@ from flask import Blueprint, jsonify, request
 from backend.state import state
 from backend.app import socketio
 from backend.utils.logger import AppLogger
+from backend.config.settings import BACKUP_DIR
+from backend.utils.backup_versioning import BackupManager
 
 bp = Blueprint("server", __name__)
 
 _mc_stdout_pump_started = False
+_tps_value = 20.0  # Current server TPS (updates from log parsing)
 
 
 def ensure_mc_stdout_pump() -> None:
-    """Start a greenlet that drains MC stdout from a Queue and emits over Socket.IO.
-
-    Subprocess log lines are read on a real OS thread; Flask-SocketIO + eventlet does not
-    reliably deliver ``emit`` calls from that thread. The queue + pump runs emits on the hub.
-    Log persistence and RUNNING transition happen in the reader thread (see manager).
-    """
     global _mc_stdout_pump_started
 
     state.ensure_mc_stdout_queue()
@@ -36,7 +33,6 @@ def ensure_mc_stdout_pump() -> None:
             try:
                 while True:
                     line = q.get_nowait()
-                    # Log already in state.server_log from the reader thread; only fan out to Socket.IO.
                     _fanout_mc_line(line)
             except std_queue.Empty:
                 pass
@@ -51,15 +47,19 @@ def _emit_socket(event: str, payload: dict) -> None:
 
 
 def _fanout_mc_line(line: str) -> None:
-    """Push one MC line to Socket.IO clients + player list (no append_log — reader thread owns that)."""
+    """Push one MC line to Socket.IO clients + player list + TPS parsing."""
+    global _tps_value
     _emit_socket("server_log", {"line": line})
     _parse_player_event(line)
+    _tps_value = _parse_tps(line)
 
 
 def _emit_log(line: str) -> None:
+    global _tps_value
     state.append_log(line)
     _emit_socket("server_log", {"line": line})
     _parse_player_event(line)
+    _tps_value = _parse_tps(line)
 
 
 def _parse_player_event(line: str) -> None:
@@ -77,6 +77,20 @@ def _parse_player_event(line: str) -> None:
             _emit_socket("players", {"players": state.players_online})
 
 
+def _parse_tps(line: str) -> float:
+    """Extract TPS (ticks per second) from server log. Returns current value if not found."""
+    global _tps_value
+    # Pattern: "Can't keep up! Is the server overloaded? Running 0.5s behind, TPS: 12.34"
+    match = re.search(r'TPS:\s*([\d.]+)', line)
+    if match:
+        return float(match.group(1))
+    # Pattern: "[HH:MM:SS] [Server thread/INFO]: [WARN] [net.minecraft...] TPS: 19.95"
+    match = re.search(r'\[TPS:\s*([\d.]+)\]', line)
+    if match:
+        return float(match.group(1))
+    return _tps_value
+
+
 @bp.route("/status", methods=["GET"])
 def get_status():
     srv = state.mc_server
@@ -85,6 +99,7 @@ def get_status():
             "status": "stopped", "uptime": None,
             "cpu": None, "ram": None, "pid": None,
             "players": state.players_online,
+            "tps": 20.0,
         })
     usage = srv.resource_usage()
     return jsonify({
@@ -94,6 +109,7 @@ def get_status():
         "ram":     usage.get("ram_mb"),
         "pid":     usage.get("pid"),
         "players": state.players_online,
+        "tps":     _tps_value,
     })
 
 
@@ -122,11 +138,15 @@ def start_server():
     java_path = data.get("java_path", "java")
 
     if not jar_path:
-        return jsonify({"ok": False, "error": "jar_path required"}), 400
+        return jsonify({"ok": False, "error": "JAR file not selected"}), 400
+
+    jar_file = Path(jar_path)
+    if not jar_file.exists():
+        return jsonify({"ok": False, "error": f"Server JAR not found: {jar_path}"}), 400
 
     if state.mc_server and state.mc_server.status not in (
             ServerStatus.STOPPED, ServerStatus.CRASHED):
-        return jsonify({"ok": False, "error": "Server already running"}), 409
+        return jsonify({"ok": False, "error": "Server is already running or starting"}), 409
 
     cfg = ServerConfig(jar_path=jar_path, ram_mb=ram_mb,
                        cpu_threads=threads, java_path=java_path)
@@ -150,7 +170,7 @@ def start_server():
 
     ok = srv.start()
     if not ok:
-        return jsonify({"ok": False, "error": "Failed to start — check console"}), 500
+        return jsonify({"ok": False, "error": "Failed to start server — check console for details"}), 500
 
     # Save jar path
     from backend.config.settings import load_config, save_config
@@ -164,15 +184,12 @@ def start_server():
 @bp.route("/stop", methods=["POST"])
 @bp.route("/stop/", methods=["POST"])
 def stop_server():
-    request.get_json(silent=True)  # accept empty body
+    request.get_json(silent=True)
 
     srv = getattr(state, "mc_server", None)
     if not srv:
-        return jsonify({"ok": False, "error": "Server not found"}), 404
+        return jsonify({"ok": False, "error": "Server not running"}), 404
 
-    # Run stop on a real OS thread. Calling srv.stop() inside the eventlet
-    # request greenlet deadlocks: eventlet.sleep + subprocess + socketio.emit
-    # can stall the hub so the HTTP response never returns.
     def _run_stop() -> None:
         try:
             srv.stop()
@@ -209,10 +226,227 @@ def backup():
         if isinstance(result, Exception):
             _emit_socket("server_log", {"line": f"[Backup] Failed: {result}"})
         else:
+            # Record in backup manager
+            from backend.api.server_api import _record_backup_metadata
+            _record_backup_metadata(result)
             _emit_socket("server_log", {"line": f"[Backup] Saved → {result.name}"})
 
     backup_world_async(world_path, done_cb=_done)
     return jsonify({"ok": True})
+
+
+def _record_backup_metadata(backup_path: Path) -> None:
+    """Record a backup in the manifest."""
+    try:
+        from backend.utils.backup_versioning import BackupManager
+        size_mb = sum(f.stat().st_size for f in backup_path.rglob("*") if f.is_file()) / (1024 * 1024)
+        mgr = BackupManager(BACKUP_DIR)
+        mgr.record_backup(backup_path.name, size_mb)
+    except Exception as e:
+        AppLogger.get().warning(f"Failed to record backup metadata: {e}")
+
+# ══ BACKUP VERSIONING ══════════════════════════════════════════════════════════
+
+from backend.utils.backup_versioning import BackupManager 
+
+@bp.route("/backups", methods=["GET"])
+def get_backups():
+    """List all backups with metadata."""
+    mgr = BackupManager(BACKUP_DIR)
+    backups = mgr.list_backups()
+    return jsonify({"backups": backups})
+
+
+@bp.route("/backups/<backup_name>/restore", methods=["POST"])
+def restore_backup(backup_name: str):
+    """Restore a world from a backup."""
+    srv = state.mc_server
+    if srv and srv.status.name.lower() != "stopped":
+        return jsonify({"ok": False, "error": "Stop the server first before restoring"}), 400
+
+    jar_dir = Path(state.mc_server.config.jar_path).parent if state.mc_server else Path.home()
+    world_path = jar_dir / "world"
+
+    mgr = BackupManager(BACKUP_DIR)
+    ok = mgr.restore_backup(backup_name, world_path)
+    if not ok:
+        return jsonify({"ok": False, "error": "Restore failed — see logs"}), 500
+
+    return jsonify({"ok": True, "message": f"World restored from {backup_name}"})
+
+
+@bp.route("/backups/<backup_name>", methods=["DELETE"])
+def delete_backup(backup_name: str):
+    """Delete a backup."""
+    try:
+        backup_path = BACKUP_DIR / backup_name
+        import shutil
+        shutil.rmtree(backup_path)
+        
+        # Update manifest
+        mgr = BackupManager(BACKUP_DIR)
+        manifest = mgr._load_manifest()
+        manifest.pop(backup_name, None)
+        mgr._save_manifest(manifest)
+        
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ══ SERVER PROPERTIES ══════════════════════════════════════════════════════════
+
+@bp.route("/properties", methods=["GET"])
+def get_properties():
+    """Read server.properties and return as dict."""
+    try:
+        srv = state.mc_server
+        props_file = Path(srv.config.jar_path).parent / "server.properties" if srv else None
+        
+        if not props_file or not props_file.exists():
+            return jsonify({"properties": {}})
+
+        props = {}
+        with open(props_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        props[k] = v
+        return jsonify({"properties": props})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@bp.route("/properties", methods=["POST"])
+def update_properties():
+    """Update server.properties. Server must be stopped."""
+    srv = state.mc_server
+    if srv and srv.status.name.lower() != "stopped":
+        return jsonify({"ok": False, "error": "Stop the server first"}), 400
+
+    data = request.get_json(force=True)
+    props = data.get("properties", {})
+    
+    try:
+        props_file = Path(srv.config.jar_path).parent / "server.properties" if srv else None
+        if not props_file:
+            return jsonify({"ok": False, "error": "No server running"}), 400
+
+        # Read existing
+        existing = {}
+        if props_file.exists():
+            with open(props_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        existing[k] = v
+
+        # Merge
+        existing.update(props)
+
+        # Write back
+        with open(props_file, "w") as f:
+            f.write("# Minecraft server properties\n")
+            for k, v in sorted(existing.items()):
+                f.write(f"{k}={v}\n")
+
+        return jsonify({"ok": True, "message": "Properties updated. Restart the server to apply."})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ══ WHITELIST ══════════════════════════════════════════════════════════════════
+
+@bp.route("/whitelist", methods=["GET"])
+def get_whitelist():
+    """Get current whitelist and enabled status."""
+    try:
+        srv = state.mc_server
+        whitelist_file = Path(srv.config.jar_path).parent / "whitelist.json" if srv else None
+        
+        whitelist = []
+        if whitelist_file and whitelist_file.exists():
+            import json
+            with open(whitelist_file) as f:
+                whitelist = json.load(f)
+
+        # Check if whitelist is enabled
+        props_file = Path(srv.config.jar_path).parent / "server.properties" if srv else None
+        enabled = False
+        if props_file and props_file.exists():
+            with open(props_file) as f:
+                for line in f:
+                    if line.strip().startswith("enforce-whitelist="):
+                        enabled = "true" in line.lower()
+                        break
+
+        return jsonify({"whitelist": whitelist, "enabled": enabled})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@bp.route("/whitelist", methods=["POST"])
+def update_whitelist():
+    """Add/remove players or toggle enabled status."""
+    data = request.get_json(force=True)
+    action = data.get("action")  # "add", "remove", "toggle"
+    username = data.get("username", "").strip()
+
+    srv = state.mc_server
+    if not srv:
+        return jsonify({"ok": False, "error": "No server running"}), 400
+
+    whitelist_file = Path(srv.config.jar_path).parent / "whitelist.json"
+    props_file = Path(srv.config.jar_path).parent / "server.properties"
+
+    try:
+        import json
+        import uuid
+
+        # Load whitelist
+        whitelist = []
+        if whitelist_file.exists():
+            with open(whitelist_file) as f:
+                whitelist = json.load(f)
+
+        if action == "add" and username:
+            # Generate a fake UUID for demo purposes (real server uses actual UUIDs)
+            fake_uuid = str(uuid.uuid4())
+            entry = {"uuid": fake_uuid, "name": username}
+            if not any(e["name"] == username for e in whitelist):
+                whitelist.append(entry)
+
+        elif action == "remove" and username:
+            whitelist = [e for e in whitelist if e["name"] != username]
+
+        # Save whitelist
+        with open(whitelist_file, "w") as f:
+            json.dump(whitelist, f, indent=2)
+
+        # Toggle enabled status
+        if action == "toggle":
+            props = {}
+            if props_file.exists():
+                with open(props_file) as f:
+                    for line in f:
+                        if line.strip() and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            props[k] = v
+
+            current = props.get("enforce-whitelist", "false").lower() == "true"
+            props["enforce-whitelist"] = "false" if current else "true"
+
+            with open(props_file, "w") as f:
+                f.write("# Minecraft server properties\n")
+                for k, v in sorted(props.items()):
+                    f.write(f"{k}={v}\n")
+
+        return jsonify({"ok": True, "whitelist": whitelist})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @bp.route("/versions", methods=["GET"])

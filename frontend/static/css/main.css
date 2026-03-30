@@ -1725,6 +1725,404 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   Backup, Properties, Whitelist, Relay Status
+════════════════════════════════════════════════════════════════════ */
+
+/* ── Relay status indicator ────────────────────────────────────── */
+.relay-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--stone-50);
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 10px;
+  color: var(--stone-500);
+}
+
+.relay-status.connected {
+  background: var(--green-50);
+  color: var(--green-700);
+  border: 1px solid var(--green-100);
+}
+
+.relay-status.offline {
+  background: var(--red-50);
+  color: var(--red-700);
+  border: 1px solid var(--red-100);
+}
+
+.relay-status::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.relay-status.connected::before {
+  background: var(--green-500);
+  opacity: 1;
+  animation: pulse 2s infinite;
+}
+
+.relay-status.offline::before {
+  background: var(--red-500);
+  opacity: 0.8;
+}
+
+/* ── Backup history modal ──────────────────────────────────────── */
+.backup-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1.5px solid var(--stone-100);
+  border-radius: var(--r-md);
+  margin-bottom: 16px;
+}
+
+.backup-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--stone-50);
+  font-size: 13px;
+  transition: background 0.12s;
+}
+
+.backup-item:last-child {
+  border-bottom: none;
+}
+
+.backup-item:hover {
+  background: var(--stone-50);
+}
+
+.backup-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.backup-name {
+  font-weight: 600;
+  color: var(--stone-900);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.backup-meta {
+  font-size: 11px;
+  color: var(--stone-400);
+}
+
+.backup-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-restore,
+.btn-delete-backup {
+  padding: 5px 10px;
+  font-size: 11px;
+  border-radius: var(--r-sm);
+}
+
+.btn-restore {
+  background: var(--green-50);
+  color: var(--green-600);
+  border: 1px solid var(--green-100);
+}
+
+.btn-restore:hover {
+  background: var(--green-100);
+}
+
+.btn-delete-backup {
+  background: var(--red-50);
+  color: var(--red-600);
+  border: 1px solid var(--red-100);
+}
+
+.btn-delete-backup:hover {
+  background: var(--red-100);
+}
+
+/* ── Server properties editor ───────────────────────────────────── */
+.properties-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1.5px solid var(--stone-100);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.properties-table th {
+  background: var(--stone-50);
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--stone-500);
+  border-bottom: 1.5px solid var(--stone-100);
+}
+
+.properties-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--stone-50);
+  font-size: 13px;
+}
+
+.properties-table tr:last-child td {
+  border-bottom: none;
+}
+
+.prop-key {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--stone-900);
+  word-break: break-all;
+}
+
+.prop-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--stone-700);
+  word-break: break-all;
+}
+
+.prop-input {
+  width: 100%;
+  padding: 7px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border: 1px solid var(--stone-200);
+  border-radius: var(--r-sm);
+  background: var(--white);
+}
+
+.prop-input:focus {
+  border-color: var(--green-400);
+  box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.12);
+}
+
+/* ── Whitelist management ────────────────────────────────────────── */
+.whitelist-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--green-50);
+  border: 1.5px solid var(--green-100);
+  border-radius: var(--r-md);
+  margin-bottom: 16px;
+}
+
+.whitelist-status {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green-700);
+}
+
+.whitelist-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1.5px solid var(--stone-100);
+  border-radius: var(--r-md);
+  margin-bottom: 16px;
+}
+
+.whitelist-player {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--stone-50);
+  font-size: 13px;
+}
+
+.whitelist-player:last-child {
+  border-bottom: none;
+}
+
+.whitelist-player:hover {
+  background: var(--stone-50);
+}
+
+.player-name {
+  font-weight: 600;
+  color: var(--stone-900);
+}
+
+.btn-remove-player {
+  padding: 5px 10px;
+  background: var(--red-50);
+  color: var(--red-600);
+  border: 1px solid var(--red-100);
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.btn-remove-player:hover {
+  background: var(--red-100);
+}
+
+.add-player-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.add-player-row .field-input {
+  flex: 1;
+}
+
+.add-player-row .btn-primary {
+  flex-shrink: 0;
+}
+
+/* ── Loading states ────────────────────────────────────────────── */
+.loading-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(72, 187, 120, 0.2);
+  border-top-color: var(--green-500);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--stone-500);
+  font-size: 13px;
+}
+
+/* Loading state on buttons */
+button.loading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+/* Fade-out effect for disabled controls */
+.controls-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ── Confirmation dialog ──────────────────────────────────────── */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 27, 24, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.15s ease;
+}
+
+.confirm-dialog {
+  background: var(--white);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg);
+  padding: 28px;
+  max-width: 380px;
+  animation: slideUp 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.confirm-title {
+  font-family: var(--font-head);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--stone-900);
+  margin-bottom: 8px;
+}
+
+.confirm-message {
+  font-size: 13px;
+  color: var(--stone-500);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.confirm-actions .btn-primary,
+.confirm-actions .btn-secondary {
+  flex: 1;
+}
+
+/* ── TPS indicator ─────────────────────────────────────────────– */
+.tps-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--stone-50);
+  border: 1px solid var(--stone-100);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--stone-600);
+}
+
+.tps-indicator.good {
+  background: var(--green-50);
+  color: var(--green-700);
+  border-color: var(--green-100);
+}
+
+.tps-indicator.lag {
+  background: var(--amber-50);
+  color: var(--amber-700);
+  border-color: var(--amber-100);
+}
+
+.tps-indicator.critical {
+  background: var(--red-50);
+  color: var(--red-700);
+  border-color: var(--red-100);
+}
+
+.tps-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.request-ttl {
+  font-size: 11px;
+  color: var(--stone-400);
+  margin-top: 2px;
+}
+
+.request-ttl.warning {
+  color: var(--amber-500);
+  font-weight: 600;
+}
+
 /* ══════════════════════════════════════════════════════════════
    ANIMATIONS
 ══════════════════════════════════════════════════════════════ */

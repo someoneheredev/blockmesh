@@ -4,7 +4,7 @@
 
 const PRESETS = {
   solo: {
-    ram: 1536, 
+    ram: 1536,
     threads: 1,
     label: "Solo",
     desc: "Perfect for testing plugins or playing by yourself. Ultra-low impact on your PC.",
@@ -91,8 +91,14 @@ const UI = {
 
     const LABELS = {
       stopped: ["Server is offline", "Start the server to let friends join"],
-      starting: ["Server is starting...", "Getting everything ready, hang tight"],
-      running: ["Server is online", uptime ? `Running for ${uptime}` : "Ready for players"],
+      starting: [
+        "Server is starting...",
+        "Getting everything ready, hang tight",
+      ],
+      running: [
+        "Server is online",
+        uptime ? `Running for ${uptime}` : "Ready for players",
+      ],
       stopping: ["Server is stopping...", "Saving world and shutting down"],
       crashed: ["Server crashed", "Check the console for errors"],
     };
@@ -101,13 +107,14 @@ const UI = {
     txt.textContent = label;
     det.textContent = detail;
 
-    const isRunning = (status === "running");
-    const isStopped = (status === "stopped" || status === "crashed");
-    const isBusy = (status === "running" || status === "starting" || status === "stopping");
+    const isRunning = status === "running";
+    const isStopped = status === "stopped" || status === "crashed";
+    const isBusy =
+      status === "running" || status === "starting" || status === "stopping";
 
     startBtn.classList.toggle("hidden", !isStopped);
     stopBtn.classList.toggle("hidden", !isBusy);
-    
+
     strip.classList.toggle("hidden", !isRunning);
     players.classList.toggle("hidden", !isRunning);
 
@@ -244,10 +251,12 @@ const UI = {
   updatePermissions(isHost, hasHost, status) {
     const startBtn = document.getElementById("start-btn");
     const stopBtn = document.getElementById("stop-btn");
-    const configInputs = document.querySelectorAll(".ch-slider, .preset-btn, #browse-jar-btn, #download-jar-btn, #java-path, #backup-btn, #console-send");
+    const configInputs = document.querySelectorAll(
+      ".ch-slider, .preset-btn, #browse-jar-btn, #download-jar-btn, #java-path, #backup-btn, #console-send",
+    );
 
     if (!hasHost) {
-      [startBtn, stopBtn].forEach(b => {
+      [startBtn, stopBtn].forEach((b) => {
         b.disabled = true;
         b.title = "A host must be elected first";
       });
@@ -266,12 +275,13 @@ const UI = {
       lock(stopBtn);
       configInputs.forEach(lock);
     } else {
-      const isBusy = (status === "starting" || status === "running" || status === "stopping");
-      
-      startBtn.disabled = (status !== "stopped" && status !== "crashed");
-      stopBtn.disabled = (status === "starting"); 
-      
-      configInputs.forEach(el => {
+      const isBusy =
+        status === "starting" || status === "running" || status === "stopping";
+
+      startBtn.disabled = status !== "stopped" && status !== "crashed";
+      stopBtn.disabled = status === "starting";
+
+      configInputs.forEach((el) => {
         el.disabled = isBusy;
         el.style.opacity = isBusy ? "0.5" : "1";
         el.style.cursor = isBusy ? "not-allowed" : "pointer";
@@ -396,6 +406,7 @@ const UI = {
         <div class="peer-info">
           <div class="peer-name">${escHtml(req.username)}</div>
           <div class="peer-sub">Wants to join your group</div>
+          <div class="request-ttl">Expires in ${req.expires_in}</div>
         </div>
         <div class="request-actions">
           <button class="btn-accept btn-primary btn-sm">Accept</button>
