@@ -4,7 +4,7 @@
 
 const PRESETS = {
   solo: {
-    ram: 1536, // 1.5GB is safer for modern vanilla solo
+    ram: 1536, 
     threads: 1,
     label: "Solo",
     desc: "Perfect for testing plugins or playing by yourself. Ultra-low impact on your PC.",
@@ -12,7 +12,7 @@ const PRESETS = {
     threadsDisplay: "1",
   },
   squad: {
-    ram: 3072, // 3GB is the "sweet spot" for 2-5 friends
+    ram: 3072,
     threads: 2,
     label: "Squad",
     desc: "The best everyday experience for you and a few friends. Smooth and reliable.",
@@ -84,7 +84,6 @@ const UI = {
     const strip = document.getElementById("connect-strip");
     const players = document.getElementById("hero-players");
 
-    // 1. Anti-flicker: Only update class if status changed
     if (this.lastStatus !== status) {
       hero.className = `server-hero ${status}`;
       this.lastStatus = status;
@@ -102,19 +101,16 @@ const UI = {
     txt.textContent = label;
     det.textContent = detail;
 
-    // 2. Define visibility states (Fixing the 'running is not defined' error)
     const isRunning = (status === "running");
     const isStopped = (status === "stopped" || status === "crashed");
     const isBusy = (status === "running" || status === "starting" || status === "stopping");
 
-    // 3. Toggle Visibility
     startBtn.classList.toggle("hidden", !isStopped);
     stopBtn.classList.toggle("hidden", !isBusy);
     
     strip.classList.toggle("hidden", !isRunning);
     players.classList.toggle("hidden", !isRunning);
 
-    // 4. Apply Permissions (Who can actually CLICK the buttons)
     this.updatePermissions(isHost, hasHost, status);
 
     if (isStopped) {
@@ -148,7 +144,6 @@ const UI = {
       chip.textContent = p;
       wrap.appendChild(chip);
     });
-    // Update count in sidebar badge
     const badge = document.getElementById("online-badge");
     const count = players.length;
     badge.textContent = count;
@@ -159,7 +154,6 @@ const UI = {
   activatePreset(preset) {
     const cfg = PRESETS[preset];
 
-    // Safety check: if the preset doesn't exist, log it and stop the crash
     if (!cfg) {
       console.error(`Preset "${preset}" not found in PRESETS object!`);
       return;
@@ -252,7 +246,6 @@ const UI = {
     const stopBtn = document.getElementById("stop-btn");
     const configInputs = document.querySelectorAll(".ch-slider, .preset-btn, #browse-jar-btn, #download-jar-btn, #java-path, #backup-btn, #console-send");
 
-    // Rule 1: If no host is elected, NO ONE can touch server buttons
     if (!hasHost) {
       [startBtn, stopBtn].forEach(b => {
         b.disabled = true;
@@ -261,7 +254,6 @@ const UI = {
       return;
     }
 
-    // Rule 2: If you are NOT the host, you can see but not touch
     if (!isHost) {
       const lock = (el) => {
         el.disabled = true;
@@ -274,11 +266,10 @@ const UI = {
       lock(stopBtn);
       configInputs.forEach(lock);
     } else {
-      // Rule 3: You ARE the host, normal "Busy" logic applies
       const isBusy = (status === "starting" || status === "running" || status === "stopping");
       
       startBtn.disabled = (status !== "stopped" && status !== "crashed");
-      stopBtn.disabled = (status === "starting"); // Allow stopping during running/stopping
+      stopBtn.disabled = (status === "starting"); 
       
       configInputs.forEach(el => {
         el.disabled = isBusy;
@@ -312,7 +303,6 @@ const UI = {
   },
 
   appendSystemMsg(text) {
-    // Goes to chat log
     const log = document.getElementById("chat-log");
     const div = document.createElement("div");
     div.className = "chat-system";

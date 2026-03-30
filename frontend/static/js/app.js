@@ -15,9 +15,7 @@
   let selectedVer = null;
   let activePreset = "squad";
   let statusTimer = null;
-  /** Last uptime string from GET /status; used when Socket.IO updates hero before the next poll. */
   let lastServerUptime = null;
-  /** Incremental log fetch cursor (matches backend `state.server_log` length). */
   let logTailCursor = 0;
   let logPollTimer = null;
 
@@ -26,7 +24,6 @@
   // ── SocketIO ────────────────────────────────────────────────────
   const socket = io();
 
-  // Console uses HTTP poll (see pollLogTail); Socket.IO log events are not relied on under eventlet.
   socket.on("system_msg", ({ message, type }) => {
     let formattedMsg = message;
     if (message.includes("[!]"))
@@ -87,7 +84,6 @@
     document.getElementById("setup-screen").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
 
-    // Populate user info in sidebar
     document.getElementById("sidebar-username").textContent = username;
     document.getElementById("sidebar-avatar").textContent =
       username[0].toUpperCase();
@@ -96,12 +92,10 @@
     localIp = ip;
     document.getElementById("sidebar-ip").textContent = ip;
 
-    // Tab navigation
     document.querySelectorAll(".nav-item[data-tab]").forEach((btn) => {
       btn.addEventListener("click", () => UI.switchTab(btn.dataset.tab));
     });
 
-    // Initial data
     await Promise.all([
       refreshPeers(),
       refreshStatus(),
@@ -110,10 +104,8 @@
       loadPendingRequests(),
     ]);
 
-    // Detect Java
     autoDetectJava();
 
-    // Poll status every 3s
     statusTimer = setInterval(refreshStatus, 3000);
   }
 
@@ -183,7 +175,6 @@
       void pollLogTail();
     } catch (err) {
       UI.toast(err.message, "error");
-      // Re-enable only if it failed to even try starting
       startBtn.disabled = false;
       startBtn.innerHTML = `Start Server`;
     }
@@ -210,13 +201,11 @@
     const s = await API.getStatus().catch(() => null);
     if (!s) return;
 
-    // Check host status
     const isHost = currentHost === username;
     const hasHost = currentHost !== null;
 
     lastServerUptime = s.uptime ?? null;
 
-    // Pass host info to UI
     UI.setServerStatus(s.status, lastServerUptime, isHost, hasHost);
 
     if (s.status === "running" || (s.status === "starting" && s.pid != null)) {
@@ -258,7 +247,6 @@
   }
 
   function onStatusChange(status) {
-    // Keep hero title/detail in sync with classes (socket handlers used to only toggle CSS).
     UI.setServerStatus(status, lastServerUptime);
     if (status === "running") {
       void refreshStatus();
@@ -267,8 +255,6 @@
     const isBusy =
       status === "running" || status === "starting" || status === "stopping";
 
-    // 1. Lock/Unlock Inputs
-    // Select all sliders, checkboxes, and preset buttons
     const configInputs = document.querySelectorAll(
       ".ch-slider, .preset-btn, #browse-jar-btn, #download-jar-btn, #java-path",
     );
@@ -279,7 +265,6 @@
         input.classList.contains("preset-btn")
       ) {
         input.disabled = isBusy;
-        // Add a visual 'locked' cue
         input.style.opacity = isBusy ? "0.5" : "1";
         input.style.cursor = isBusy ? "not-allowed" : "pointer";
       } else {
@@ -288,7 +273,6 @@
       }
     });
 
-    // Start/Stop visibility is handled by UI.setServerStatus above.
   } // ── Resource presets ─────────────────────────────────────────────
   document.querySelectorAll(".preset-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -338,7 +322,6 @@
   }
 
   async function autoDetectJava() {
-    // The backend auto-detects on start; just show what's configured
     const cfg = await API.getSettings().catch(() => ({}));
     if (cfg.last_java_path && cfg.last_java_path !== "java") {
       document.getElementById("java-path").value = cfg.last_java_path;
@@ -353,7 +336,6 @@
       .then(() => UI.toast("Copied to clipboard!", "success"));
   });
 
-  // ── Friends ──────────────────────────────────────────────────────
   // ── Friends ──────────────────────────────────────────────────────
   document.getElementById("lan-toggle").addEventListener("change", (e) => {
     document
@@ -502,7 +484,6 @@
 
   async function openDownload() {
     UI.showModal("download-modal");
-    // Set default path
     const homeDir = await (window.electronAPI?.getHomeDir() ||
       Promise.resolve(""));
     document.getElementById("dl-dest").value =
@@ -624,8 +605,6 @@
     const isBusy =
       status === "starting" || status === "running" || status === "stopping";
 
-    // 1. Lock/Unlock Resources
-    // This selects all sliders, preset buttons, and the JAR selection button
     const configElements = document.querySelectorAll(
       ".ch-slider, .preset-btn, #browse-jar-btn, #download-jar-btn, #java-path",
     );
@@ -633,7 +612,6 @@
     configElements.forEach((el) => {
       el.disabled = isBusy;
 
-      // Visual feedback for being locked
       if (isBusy) {
         el.style.opacity = "0.5";
         el.style.cursor = "not-allowed";
@@ -643,9 +621,7 @@
       }
     });
 
-    // Start/Stop visibility is handled by UI.setServerStatus above.
   }
 
-  // ── Go! ───────────────────────────────────────────────────────────
   await boot();
 })();

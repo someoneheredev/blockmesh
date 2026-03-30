@@ -52,7 +52,7 @@ const API = {
   stopServer: () =>
     apiFetch("/api/server/stop/", {
       method: "POST",
-      body: JSON.stringify({}), // <--- Add this!
+      body: JSON.stringify({}),
     }),
   sendCommand: (cmd) =>
     apiFetch("/api/server/command", {
