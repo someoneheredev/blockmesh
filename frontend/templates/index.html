@@ -1,0 +1,841 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BlockMesh</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/main.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+  </head>
+  <body>
+    <!-- ══════════════════════ TITLE BAR ══════════════════════════ -->
+    <div id="title-bar" class="title-bar">
+      <div class="title-bar-drag">
+        <img
+          class="title-bar-icon"
+          src="{{ url_for('static', filename='img/blockmesh-png.png') }}"
+          alt="logo"
+        />
+        <span class="title-bar-text">BlockMesh</span>
+      </div>
+      <div class="title-bar-controls">
+        <button id="win-min" class="win-btn">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+        <button id="win-max" class="win-btn">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+          </svg>
+        </button>
+        <button id="win-close" class="win-btn btn-win-close">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </div>
+    <!-- ══════════════════════ SETUP SCREEN ══════════════════════════ -->
+    <div id="setup-screen" class="setup-screen">
+      <div class="setup-card">
+        <div class="setup-hero">
+          <div class="setup-icon">⛏</div>
+          <h1 class="setup-title">Welcome to BlockMesh</h1>
+          <p class="setup-desc">
+            The easiest way to play Minecraft with friends.<br />Pick a name to
+            get started.
+          </p>
+        </div>
+        <div class="setup-form">
+          <label class="field-label">Your name</label>
+          <input
+            id="setup-username"
+            class="field-input"
+            type="text"
+            placeholder="e.g. Notch, Steve, Alex…"
+            maxlength="24"
+            autocomplete="off"
+          />
+          <p id="setup-error" class="field-error hidden"></p>
+          <button id="setup-submit" class="btn-hero">
+            <span>Let's play</span>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+            >
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════ MAIN APP ══════════════════════════════ -->
+    <div id="app" class="app hidden">
+      <!-- Sidebar -->
+      <nav class="sidebar">
+        <div class="sidebar-brand">
+          <img
+            class="brand-icon"
+            src="{{ url_for('static', filename='img/blockmesh-png.png') }}"
+            alt="BlockMesh Logo"
+          />
+          <span class="brand-name">BlockMesh</span>
+        </div>
+
+        <div class="nav-section">
+          <button class="nav-item active" data-tab="server">
+            <svg
+              class="nav-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <path d="M8 21h8M12 17v4" />
+            </svg>
+            <span>Server</span>
+          </button>
+          <button class="nav-item" data-tab="friends">
+            <svg
+              class="nav-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span>Friends</span>
+            <span id="online-badge" class="nav-badge hidden">0</span>
+          </button>
+          <button class="nav-item" data-tab="console">
+            <svg
+              class="nav-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+            <span>Console</span>
+          </button>
+          <button class="nav-item" data-tab="chat">
+            <svg
+              class="nav-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+              />
+            </svg>
+            <span>Chat</span>
+            <span id="chat-badge" class="nav-badge hidden">!</span>
+          </button>
+        </div>
+
+        <div class="sidebar-footer">
+          <div id="relay-status" class="relay-status offline">
+            Relay Offline
+          </div>
+
+          <div class="user-chip">
+            <div id="sidebar-avatar" class="user-avatar">?</div>
+            <div class="user-info">
+              <div id="sidebar-username" class="user-name">—</div>
+              <div id="sidebar-ip" class="user-ip">—</div>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Main content -->
+      <main class="main-content">
+        <!-- ══ SERVER TAB ══════════════════════════════════════════════ -->
+        <div id="tab-server" class="tab-pane active">
+          <!-- Hero status card -->
+          <div id="server-hero" class="server-hero stopped">
+            <div class="hero-left">
+              <div class="hero-status-row">
+                <div id="hero-dot" class="hero-dot"></div>
+                <span id="hero-status-text" class="hero-status-text"
+                  >Server is offline</span
+                >
+              </div>
+              <div id="hero-detail" class="hero-detail">
+                Start the server to let friends join
+              </div>
+
+              <!-- Players row — shown when running -->
+              <div id="hero-players" class="hero-players hidden">
+                <div id="hero-player-chips" class="hero-player-chips"></div>
+              </div>
+            </div>
+            <div class="hero-right">
+              <div class="hero-stats">
+                <div class="hstat">
+                  <div class="hstat-val" id="hstat-cpu">—</div>
+                  <div class="hstat-label">CPU</div>
+                </div>
+                <div class="hstat-divider"></div>
+                <div class="hstat">
+                  <div class="hstat-val" id="hstat-ram">—</div>
+                  <div class="hstat-label">RAM</div>
+                </div>
+                <div class="hstat-divider"></div>
+                <div class="hstat">
+                  <div class="hstat-val" id="hstat-pid">—</div>
+                  <div class="hstat-label">PID</div>
+                </div>
+                <div class="hstat-divider"></div>
+                <div class="hstat">
+                  <div class="hstat-val" id="hstat-uptime">—</div>
+                  <div class="hstat-label">Uptime</div>
+                </div>
+                <div id="tps-indicator" class="tps-indicator good">
+                  <span class="tps-dot"></span>
+                  20.0 TPS
+                </div>
+              </div>
+              <div class="hero-actions">
+                <button id="start-btn" class="btn-start">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
+                  Start Server
+                </button>
+                <button id="stop-btn" class="btn-stop hidden">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <rect x="6" y="6" width="12" height="12" rx="1" />
+                  </svg>
+                  Stop Server
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Two-col config area -->
+          <div class="config-grid">
+            <!-- JAR card -->
+            <div class="config-card">
+              <div class="config-card-header">
+                <div class="config-card-icon">📦</div>
+                <div>
+                  <div class="config-card-title">Server File</div>
+                  <div class="config-card-sub">The Minecraft server JAR</div>
+                </div>
+              </div>
+              <div class="jar-display-wrap">
+                <div id="jar-display" class="jar-display empty">
+                  No server file selected
+                </div>
+              </div>
+              <div class="jar-actions">
+                <button id="browse-jar-btn" class="btn-secondary">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                    />
+                  </svg>
+                  Browse
+                </button>
+                <button id="download-jar-btn" class="btn-secondary">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Download
+                </button>
+              </div>
+
+              <div class="field-group">
+                <label class="field-label">Java Executable</label>
+                <div class="java-row">
+                  <input
+                    id="java-path"
+                    class="field-input field-mono"
+                    value="java"
+                    autocomplete="off"
+                  />
+                  <button
+                    id="browse-java-btn"
+                    class="btn-icon"
+                    title="Browse for java.exe"
+                  >
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 12px">
+              <button
+                id="history-btn"
+                class="btn-secondary"
+                onclick="
+                  BackupManager.loadBackups();
+                  UI.showModal('backup-modal');
+                "
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                Backup History
+              </button>
+              <button
+                id="props-btn"
+                class="btn-secondary"
+                onclick="
+                  PropertiesEditor.loadProperties();
+                  UI.showModal('properties-modal');
+                "
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2M12 6v6h4"
+                  />
+                </svg>
+                Settings
+              </button>
+              <button
+                id="whitelist-btn"
+                class="btn-secondary"
+                onclick="
+                  WhitelistManager.load();
+                  UI.showModal('whitelist-modal');
+                "
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
+                </svg>
+                Whitelist
+              </button>
+            </div>
+
+            <!-- Resources card -->
+            <div class="config-card">
+              <div class="config-card-header">
+                <div class="config-card-icon">⚡</div>
+                <div>
+                  <div class="config-card-title">Resources</div>
+                  <div class="config-card-sub">
+                    How much power to give the server
+                  </div>
+                </div>
+              </div>
+
+              <!-- Preset pills -->
+              <div class="preset-grid">
+                <button class="preset-btn" data-preset="solo">
+                  <span class="preset-emoji">🍃</span>
+                  <span class="preset-name">Solo</span>
+                  <span class="preset-desc">Testing / Just me</span>
+                </button>
+
+                <button class="preset-btn active" data-preset="squad">
+                  <span class="preset-emoji">🤝</span>
+                  <span class="preset-name">Squad</span>
+                  <span class="preset-desc">2–5 Friends</span>
+                </button>
+
+                <button class="preset-btn" data-preset="vanilla">
+                  <span class="preset-emoji">🍦</span>
+                  <span class="preset-name">Vanilla+</span>
+                  <span class="preset-desc">8+ Players</span>
+                </button>
+
+                <button class="preset-btn" data-preset="modded">
+                  <span class="preset-emoji">🧪</span>
+                  <span class="preset-name">Modded</span>
+                  <span class="preset-desc">Small Modpacks</span>
+                </button>
+
+                <button class="preset-btn" data-preset="beast">
+                  <span class="preset-emoji">👹</span>
+                  <span class="preset-name">Beast</span>
+                  <span class="preset-desc">Kitchen Sink Packs</span>
+                </button>
+
+                <button class="preset-btn" data-preset="advanced">
+                  <span class="preset-emoji">🛠️</span>
+                  <span class="preset-name">Custom</span>
+                  <span class="preset-desc">Manual Control</span>
+                </button>
+              </div>
+
+              <!-- Preset description banner -->
+              <div id="preset-banner" class="preset-banner">
+                <span id="preset-banner-text"
+                  >Allocates balanced resources for 2–8 players — the best
+                  everyday experience.</span
+                >
+              </div>
+
+              <!-- Advanced sliders — only shown when Advanced selected -->
+              <div id="advanced-controls" class="advanced-controls hidden">
+                <div class="slider-field">
+                  <div class="slider-header">
+                    <span class="field-label">RAM</span>
+                    <span id="ram-val" class="slider-readout">1024 MB</span>
+                  </div>
+                  <input
+                    id="ram-slider"
+                    class="ch-slider"
+                    type="range"
+                    min="512"
+                    max="16384"
+                    step="512"
+                    value="1024"
+                  />
+                </div>
+                <div class="slider-field">
+                  <div class="slider-header">
+                    <span class="field-label">CPU Threads</span>
+                    <span id="thread-val" class="slider-readout"
+                      >2 threads</span
+                    >
+                  </div>
+                  <input
+                    id="thread-slider"
+                    class="ch-slider"
+                    type="range"
+                    min="1"
+                    max="16"
+                    step="1"
+                    value="2"
+                  />
+                </div>
+              </div>
+
+              <!-- Compact summary for non-advanced presets -->
+              <div id="preset-summary" class="preset-summary">
+                <div class="psummary-item">
+                  <span class="psummary-label">RAM</span>
+                  <span id="psummary-ram" class="psummary-val">1 GB</span>
+                </div>
+                <div class="psummary-sep"></div>
+                <div class="psummary-item">
+                  <span class="psummary-label">Threads</span>
+                  <span id="psummary-threads" class="psummary-val">2</span>
+                </div>
+                <div class="psummary-sep"></div>
+                <div class="psummary-item">
+                  <span class="psummary-label">Java</span>
+                  <span id="psummary-java" class="psummary-val">Auto</span>
+                </div>
+              </div>
+
+              <button id="backup-btn" class="btn-secondary mt-auto">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v14a2 2 0 0 1-2 2z"
+                  />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                  <polyline points="7 3 7 8 15 8" />
+                </svg>
+                Backup World
+              </button>
+            </div>
+          </div>
+          <!-- /config-grid -->
+
+          <!-- Connect info strip -->
+          <div id="connect-strip" class="connect-strip hidden">
+            <div class="connect-strip-inner">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <path
+                  d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+                />
+              </svg>
+              <span>Friends can join at</span>
+              <span id="connect-address" class="connect-address">—</span>
+              <button id="copy-address-btn" class="btn-copy">Copy</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ FRIENDS TAB ════════════════════════════════════════════ -->
+        <div id="tab-friends" class="tab-pane hidden">
+          <div class="tab-header">
+            <h2 class="tab-title">Friends</h2>
+            <div class="tab-actions">
+              <button id="bench-btn" class="btn-secondary">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+                Benchmark
+              </button>
+              <button id="elect-btn" class="btn-secondary">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
+                  <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
+                  <line x1="6" y1="1" x2="6" y2="4" />
+                  <line x1="10" y1="1" x2="10" y2="4" />
+                  <line x1="14" y1="1" x2="14" y2="4" />
+                </svg>
+                Elect Best Host
+              </button>
+            </div>
+          </div>
+
+          <div class="friends-layout">
+            <!-- Add friend card -->
+            <div class="add-friend-card">
+              <div class="add-friend-icon">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="8.5" cy="7" r="4" />
+                  <line x1="20" y1="8" x2="20" y2="14" />
+                  <line x1="23" y1="11" x2="17" y2="11" />
+                </svg>
+              </div>
+              <h3 class="add-friend-title">Add a friend</h3>
+              <p class="add-friend-sub">
+                They'll get a request to accept — both of you need BlockMesh
+                open.
+              </p>
+
+              <div class="field-group">
+                <label class="field-label">Their username</label>
+                <input
+                  id="add-name"
+                  class="field-input"
+                  placeholder="e.g. Notch"
+                  autocomplete="off"
+                />
+              </div>
+
+              <!-- LAN toggle -->
+              <label
+                class="toggle-row"
+                style="margin-top: 14px; margin-bottom: 0"
+              >
+                <input id="lan-toggle" type="checkbox" />
+                <span class="toggle-track"
+                  ><span class="toggle-thumb"></span
+                ></span>
+                <span class="toggle-label" style="font-size: 12px"
+                  >Same network / specify IP</span
+                >
+              </label>
+              <div id="lan-ip-field" class="field-group hidden">
+                <label class="field-label">Their IP address</label>
+                <input
+                  id="add-ip"
+                  class="field-input"
+                  placeholder="192.168.1.x"
+                  autocomplete="off"
+                />
+              </div>
+
+              <button
+                id="add-friend-btn"
+                class="btn-primary btn-full"
+                style="margin-top: 14px"
+              >
+                Send Friend Request
+              </button>
+            </div>
+
+            <div class="peer-list-area">
+              <div id="pending-section" class="hidden">
+                <p class="section-label" style="color: var(--amber-500)">
+                  <span>⏳</span> Pending Requests
+                </p>
+                <div
+                  id="pending-list"
+                  style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    margin-bottom: 20px;
+                  "
+                ></div>
+              </div>
+
+              <p class="section-label">Your Group</p>
+              <div id="peer-list" class="peer-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ CONSOLE TAB ════════════════════════════════════════════ -->
+        <div id="tab-console" class="tab-pane hidden">
+          <div class="tab-header">
+            <h2 class="tab-title">Console</h2>
+            <button id="clear-log-btn" class="btn-secondary btn-sm">
+              Clear
+            </button>
+          </div>
+          <div class="console-wrap">
+            <div id="console-log" class="console-log"></div>
+            <div class="console-input-row">
+              <span class="console-prompt">$</span>
+              <input
+                id="console-input"
+                class="console-input"
+                placeholder="Type a server command and press Enter…"
+                autocomplete="off"
+              />
+              <button id="console-send" class="btn-primary btn-sm">Run</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ CHAT TAB ═══════════════════════════════════════════════ -->
+        <div id="tab-chat" class="tab-pane hidden">
+          <div class="tab-header">
+            <h2 class="tab-title">Group Chat</h2>
+            <div id="chat-host-info" class="chat-host-info">
+              <span id="chat-host-label" class="chat-host-label muted"
+                >No host elected</span
+              >
+            </div>
+          </div>
+          <div class="chat-wrap">
+            <div id="chat-log" class="chat-log"></div>
+            <div class="chat-input-row">
+              <input
+                id="chat-input"
+                class="field-input"
+                placeholder="Message your friends…"
+                autocomplete="off"
+              />
+              <button id="chat-send" class="btn-primary">Send</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+
+    <!-- ══════════════════ DOWNLOAD MODAL ════════════════════════════ -->
+    <div id="download-modal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <div>
+            <h2 class="modal-title">Download Minecraft Server</h2>
+            <p class="modal-sub">Fetched from the official Mojang website</p>
+          </div>
+          <button id="dl-close" class="btn-modal-close">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        <label class="toggle-row">
+          <input id="release-only" type="checkbox" checked />
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="toggle-label">Releases only</span>
+        </label>
+
+        <div id="version-list" class="version-list">
+          <div class="version-loading">Loading versions…</div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Save location</label>
+          <input id="dl-dest" class="field-input field-mono" type="text" />
+        </div>
+
+        <div id="dl-progress-wrap" class="dl-progress-wrap hidden">
+          <div class="progress-track">
+            <div
+              id="dl-progress-bar"
+              class="progress-fill"
+              style="width: 0%"
+            ></div>
+          </div>
+          <p id="dl-progress-text" class="dl-progress-text"></p>
+        </div>
+
+        <button id="dl-start-btn" class="btn-primary btn-full" disabled>
+          Download Selected Version
+        </button>
+      </div>
+    </div>
+
+    <!-- ══════════════════ BENCHMARK MODAL ═══════════════════════════ -->
+    <div id="bench-modal" class="modal-overlay hidden">
+      <div class="modal modal-narrow">
+        <div class="bench-anim">
+          <div class="bench-rings">
+            <div class="bench-ring r1"></div>
+            <div class="bench-ring r2"></div>
+            <div class="bench-ring r3"></div>
+          </div>
+          <div class="bench-icon">⚡</div>
+        </div>
+        <h2 class="modal-title text-center">Benchmarking your PC</h2>
+        <p id="bench-label" class="modal-sub text-center">Preparing…</p>
+        <div class="progress-track">
+          <div id="bench-bar" class="progress-fill" style="width: 0%"></div>
+        </div>
+
+        <div id="bench-results" class="bench-results hidden">
+          <div class="bench-score-wrap">
+            <div id="bench-score" class="bench-score">0</div>
+            <div class="bench-score-label">points</div>
+          </div>
+          <div id="bench-detail" class="bench-stats-grid"></div>
+        </div>
+        <button id="bench-close" class="btn-primary btn-full hidden">
+          Done
+        </button>
+      </div>
+    </div>
+
+    <!-- ══════════════════ TOAST ════════════════════════════════════ -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/ui.js"></script>
+    <script src="/static/js/app.js"></script>
+  </body>
+</html>
