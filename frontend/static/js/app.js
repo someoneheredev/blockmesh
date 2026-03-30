@@ -18,6 +18,8 @@
   let lastServerUptime = null;
   let logTailCursor = 0;
   let logPollTimer = null;
+  // Last server status received from the host peer (used when we're not the host).
+  let peerServerStatus = null;
 
   const MC_DONE_REGEX = /Done\s+\(\d+\.?\d*s\)!/;
 
@@ -83,6 +85,7 @@
 
   // Server status broadcast from the host peer — shown to non-hosts.
   socket.on("peer_server_status", (payload) => {
+    peerServerStatus = payload;
     const isHost = currentHost === username;
     if (isHost) return; // Host uses its own local status
     UI.setServerStatus(payload.status, payload.uptime, false, true);
@@ -91,10 +94,23 @@
 
   // Relay connection status changes.
   socket.on("relay_status", ({ connected }) => {
+    setRelayStatus(connected);
     if (!connected) {
       UI.toast("Relay disconnected — retrying...", "info", 3000);
     }
   });
+
+  function setRelayStatus(connected) {
+    const el = document.getElementById("relay-status");
+    if (!el) return;
+    if (connected) {
+      el.textContent = "Relay Online";
+      el.className = "relay-status online";
+    } else {
+      el.textContent = "Relay Offline";
+      el.className = "relay-status offline";
+    }
+  }
 
   // ── Boot ────────────────────────────────────────────────────────
   async function boot() {
@@ -123,8 +139,19 @@
     document.getElementById("sidebar-ip").textContent = ip;
 
     document.querySelectorAll(".nav-item[data-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => UI.switchTab(btn.dataset.tab));
+      btn.addEventListener("click", () => {
+        UI.switchTab(btn.dataset.tab);
+        if (btn.dataset.tab === "chat") {
+          document.getElementById("chat-badge").classList.add("hidden");
+        }
+      });
     });
+
+    // Fetch initial relay status (the socket event only fires on change).
+    fetch("/api/group/relay/status")
+      .then((r) => r.json())
+      .then((d) => setRelayStatus(d.connected ?? true))
+      .catch(() => {});
 
     await Promise.all([
       refreshPeers(),
@@ -234,8 +261,15 @@
     const isHost = currentHost === username;
     const hasHost = currentHost !== null;
 
-    lastServerUptime = s.uptime ?? null;
+    if (!isHost && peerServerStatus) {
+      // Non-host: use the status broadcast from the host peer instead of
+      // the local server (which is always "stopped").
+      UI.setServerStatus(peerServerStatus.status, peerServerStatus.uptime, false, hasHost);
+      if (peerServerStatus.players) UI.renderPlayerChips(peerServerStatus.players);
+      return;
+    }
 
+    lastServerUptime = s.uptime ?? null;
     UI.setServerStatus(s.status, lastServerUptime, isHost, hasHost);
 
     if (s.status === "running" || (s.status === "starting" && s.pid != null)) {
