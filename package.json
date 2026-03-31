@@ -1,6 +1,6 @@
 {
   "name": "blockmesh",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Host Minecraft with your friends",
   "main": "electron/main.js",
   "scripts": {

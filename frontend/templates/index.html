@@ -12,6 +12,8 @@
     />
     <link rel="stylesheet" href="/static/css/main.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
   </head>
   <body>
     <!-- ══════════════════ RECONNECTION BANNER ═══════════════════ -->
@@ -734,10 +736,14 @@
           <div class="chat-wrap">
             <div id="chat-log" class="chat-log"></div>
             <div class="chat-input-row">
+              <div class="emoji-picker-wrap">
+                <button id="emoji-picker-btn" class="emoji-picker-btn" title="Insert emoji" type="button">😊</button>
+                <div id="emoji-panel" class="emoji-panel hidden"></div>
+              </div>
               <input
                 id="chat-input"
                 class="field-input"
-                placeholder="Message your friends…"
+                placeholder="Message your friends… (supports **markdown**)"
                 autocomplete="off"
               />
               <button id="chat-send" class="btn-primary">Send</button>
@@ -823,6 +829,23 @@
         <div class="field-group" style="margin-top:16px">
           <label class="field-label">Username</label>
           <input id="profile-username" class="field-input" type="text" maxlength="24" autocomplete="off" />
+        </div>
+        <div class="field-group" style="margin-top:14px">
+          <label class="field-label">Status</label>
+          <select id="profile-status" class="field-input">
+            <option value="online">🟢  Online</option>
+            <option value="away">🟡  Away</option>
+            <option value="dnd">🔴  Do Not Disturb</option>
+            <option value="invisible">⚫  Invisible</option>
+          </select>
+        </div>
+        <div class="field-group" style="margin-top:14px">
+          <label class="field-label">Status Message</label>
+          <input id="profile-status-text" class="field-input" type="text" maxlength="60" placeholder="e.g. Playing SkyBlock…" autocomplete="off" />
+        </div>
+        <div class="field-group" style="margin-top:14px">
+          <label class="field-label">Bio</label>
+          <textarea id="profile-bio" class="field-input" maxlength="120" rows="2" placeholder="Tell your friends something about yourself…" style="resize:none;line-height:1.5"></textarea>
         </div>
         <button id="profile-save" class="btn-primary btn-full" style="margin-top:16px">Save Changes</button>
       </div>
@@ -948,6 +971,34 @@
         <button id="bench-close" class="btn-primary btn-full hidden">
           Done
         </button>
+      </div>
+    </div>
+
+    <!-- ══════════════════ PEER PROFILE CARD ════════════════════════ -->
+    <div id="peer-profile-modal" class="modal-overlay hidden">
+      <div class="modal modal-narrow">
+        <div class="profile-card">
+          <div class="profile-card-banner"></div>
+          <div class="profile-card-avatar-wrap">
+            <div id="pc-avatar" class="profile-card-avatar">?</div>
+            <div id="pc-status-dot" class="status-dot online"></div>
+          </div>
+          <div id="pc-name" class="profile-card-name">—</div>
+          <div id="pc-status-text" class="profile-card-status-text hidden"></div>
+          <div id="pc-bio" class="profile-card-bio hidden"></div>
+          <div class="profile-card-stats">
+            <div class="profile-card-stat">
+              <div id="pc-score" class="profile-card-stat-val">—</div>
+              <div class="profile-card-stat-label">Bench Score</div>
+            </div>
+            <div class="profile-card-stat">
+              <div id="pc-ip" class="profile-card-stat-val" style="font-family:var(--font-mono);font-size:11px">—</div>
+              <div class="profile-card-stat-label">IP Address</div>
+            </div>
+          </div>
+          <div id="pc-badges" class="profile-card-badges"></div>
+        </div>
+        <button id="peer-profile-close" class="btn-secondary btn-full" style="margin-top:16px">Close</button>
       </div>
     </div>
 

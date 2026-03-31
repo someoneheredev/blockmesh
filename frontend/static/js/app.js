@@ -29,6 +29,12 @@
   // Console command history for up/down navigation.
   const cmdHistory = [];
   let cmdHistoryIdx = -1;
+  // Own profile fields
+  let currentStatus = "online";
+  let currentStatusText = "";
+  let currentBio = "";
+  // Peer data cache for profile card
+  let peersCache = [];
 
   const MC_DONE_REGEX = /Done\s+\(\d+\.?\d*s\)!/;
 
@@ -132,16 +138,19 @@
     username = cfg.username || "";
     jarPath = cfg.last_jar_path || "";
     currentAvatar = cfg.avatar || "";
+    currentStatus = cfg.status || "online";
+    currentStatusText = cfg.status_text || "";
+    currentBio = cfg.bio || "";
     UI.setJarDisplay(jarPath);
 
     if (!username) {
       showSetup();
       return;
     }
-    await launchApp();
+    await launchApp(cfg);
   }
 
-  async function launchApp() {
+  async function launchApp(cfg = {}) {
     document.getElementById("setup-screen").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
 
@@ -538,6 +547,7 @@
 
   async function refreshPeers() {
     const peers = await API.getPeers().catch(() => []);
+    peersCache = peers;
     UI.renderPeers(peers, username);
   }
 
@@ -822,6 +832,9 @@
       prevEl.classList.remove("has-img");
     }
     document.getElementById("profile-username").value = username;
+    document.getElementById("profile-status").value = currentStatus;
+    document.getElementById("profile-status-text").value = currentStatusText;
+    document.getElementById("profile-bio").value = currentBio;
     UI.showModal("profile-modal");
   }
 
@@ -854,10 +867,19 @@
       ? avatarInput._pendingAvatar
       : currentAvatar;
 
-    const settings = { username: newUsername };
+    const newStatus = document.getElementById("profile-status").value;
+    const newStatusText = document.getElementById("profile-status-text").value.trim();
+    const newBio = document.getElementById("profile-bio").value.trim();
+
+    const settings = { username: newUsername, status: newStatus, status_text: newStatusText, bio: newBio };
     if (newAvatar !== currentAvatar) settings.avatar = newAvatar;
 
     await API.saveSettings(settings).catch((e) => UI.toast(e.message, "error"));
+
+    currentStatus = newStatus;
+    currentStatusText = newStatusText;
+    currentBio = newBio;
+
     UI.toast("Profile saved!", "success");
     UI.hideModal("profile-modal");
 
@@ -1042,6 +1064,103 @@
       UI.toast(result.message || "Properties saved!", "success");
     } catch (e) {
       UI.toast(e.message, "error");
+    }
+  });
+
+  // ── Peer profile card ─────────────────────────────────────────
+  document.getElementById("peer-profile-close").addEventListener("click", () => {
+    UI.hideModal("peer-profile-modal");
+  });
+
+  document.getElementById("peer-list").addEventListener("click", (e) => {
+    const trigger = e.target.closest("[data-open-profile]");
+    if (!trigger) return;
+    // Don't open if clicking remove btn
+    if (e.target.closest(".btn-remove-peer")) return;
+    const peerUsername = trigger.dataset.openProfile;
+    const peer = peersCache.find((p) => p.username === peerUsername);
+    if (peer) openPeerProfile(peer);
+  });
+
+  function openPeerProfile(peer) {
+    const isSelf = peer.is_self || peer.username === username;
+    const statusKey = (!peer.online && !isSelf) ? "invisible" : (peer.status || "online");
+
+    // Avatar
+    const avatarEl = document.getElementById("pc-avatar");
+    if (peer.avatar && peer.avatar.startsWith("data:")) {
+      avatarEl.innerHTML = `<img src="${peer.avatar}" alt="${peer.username}" />`;
+    } else {
+      avatarEl.textContent = peer.username[0].toUpperCase();
+      avatarEl.innerHTML = peer.username[0].toUpperCase();
+    }
+
+    document.getElementById("pc-status-dot").className = `status-dot ${statusKey}`;
+    document.getElementById("pc-name").textContent = peer.username;
+
+    const statusTextEl = document.getElementById("pc-status-text");
+    if (peer.status_text) {
+      statusTextEl.textContent = peer.status_text;
+      statusTextEl.classList.remove("hidden");
+    } else {
+      statusTextEl.classList.add("hidden");
+    }
+
+    const bioEl = document.getElementById("pc-bio");
+    if (peer.bio) {
+      bioEl.textContent = peer.bio;
+      bioEl.classList.remove("hidden");
+    } else {
+      bioEl.classList.add("hidden");
+    }
+
+    document.getElementById("pc-score").textContent =
+      peer.score != null ? `${Math.round(peer.score)} pts` : "—";
+    document.getElementById("pc-ip").textContent = peer.ip || "—";
+
+    const badges = document.getElementById("pc-badges");
+    badges.innerHTML = "";
+    if (peer.is_host) badges.innerHTML += `<span class="profile-card-badge host">HOST</span>`;
+    if (isSelf) badges.innerHTML += `<span class="profile-card-badge self">You</span>`;
+
+    UI.showModal("peer-profile-modal");
+  }
+
+  // ── Emoji picker ──────────────────────────────────────────────
+  const EMOJI_GROUPS = [
+    { label: "Smileys", emojis: ["😀","😂","😅","🤣","😊","😇","🙂","😍","🤩","😘","😎","🤔","😏","😒","😔","😢","😭","😤","😡","🤯"] },
+    { label: "Gestures", emojis: ["👍","👎","👋","🤝","🙌","👏","🤜","🤛","✌️","🤞","👌","🫡","💪","🦾","🫶"] },
+    { label: "Gaming", emojis: ["🎮","🕹️","⚔️","🛡️","🏆","🥇","💎","💣","🔥","⚡","🌟","🎯","🎲","🎰","🃏"] },
+    { label: "Objects", emojis: ["⛏️","🧱","🌲","🏰","🔮","📦","🗡️","🐉","🌍","🧪","🔧","⚙️","🖥️","📡","🎵"] },
+  ];
+
+  const emojiPanel = document.getElementById("emoji-panel");
+  emojiPanel.innerHTML = EMOJI_GROUPS.map((g) => `
+    <div class="emoji-panel-title">${g.label}</div>
+    <div class="emoji-panel-grid">
+      ${g.emojis.map((e) => `<button class="emoji-cell" data-emoji="${e}" type="button">${e}</button>`).join("")}
+    </div>
+  `).join("");
+
+  document.getElementById("emoji-picker-btn").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    emojiPanel.classList.toggle("hidden");
+  });
+
+  emojiPanel.addEventListener("click", (e) => {
+    const btn = e.target.closest(".emoji-cell");
+    if (!btn) return;
+    const input = document.getElementById("chat-input");
+    const pos = input.selectionStart ?? input.value.length;
+    input.value = input.value.slice(0, pos) + btn.dataset.emoji + input.value.slice(pos);
+    input.focus();
+    input.setSelectionRange(pos + btn.dataset.emoji.length, pos + btn.dataset.emoji.length);
+    emojiPanel.classList.add("hidden");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".emoji-picker-wrap")) {
+      emojiPanel.classList.add("hidden");
     }
   });
 

@@ -53,12 +53,38 @@ const PRESETS = {
   },
 };
 
+// ── marked.js config ──────────────────────────────────────────
+if (typeof marked !== "undefined") {
+  marked.setOptions({ breaks: true, gfm: true });
+}
+
+function _renderMarkdown(text) {
+  if (typeof marked !== "undefined" && typeof DOMPurify !== "undefined") {
+    const raw = marked.parse(text);
+    return DOMPurify.sanitize(raw, {
+      ALLOWED_TAGS: ["p","strong","em","s","del","code","pre","blockquote","a","img",
+                     "ul","ol","li","h1","h2","h3","br","hr"],
+      ALLOWED_ATTR: ["href","src","alt","title","target","class","rel"],
+    });
+  }
+  return escHtml(text).replace(/\n/g, "<br>");
+}
+
+function _embedImages(html) {
+  return html.replace(
+    /(?<!['"=])(https?:\/\/[^\s<>"]+?\.(?:gif|png|jpg|jpeg|webp))(?=[^"'<]*?(?:<|$))/gi,
+    '<img src="$1" class="chat-image" alt="image" loading="lazy" />'
+  );
+}
+
 const UI = {
   // ── Tab navigation ─────────────────────────────────────────────
 
   lastStatus: null,
   lastPlayersJson: null,
   lastPeersJson: null,
+  _lastChatSender: null,
+  _lastChatTs: 0,
 
   switchTab(tabId) {
     document.querySelectorAll(".nav-item").forEach((btn) => {
@@ -248,19 +274,17 @@ const UI = {
     div.className = `peer-row${isHost ? " is-host" : ""}`;
     div.dataset.username = p.username;
 
-    const avatarState = isHost
-      ? "hosting"
-      : p.online || p.is_self
-        ? "online"
-        : "";
-    const sub = isHost
-      ? "Hosting"
-      : p.online || p.is_self
-        ? "Online"
-        : "Offline";
-    const subClass = isHost ? "hosting" : p.online || p.is_self ? "online" : "";
+    const statusKey = p.status || "online";
+    const isOnline = p.online || p.is_self;
+    const effectiveStatus = !isOnline ? "invisible" : statusKey;
 
-    const avatarHtml = UI._buildAvatarHtml(p.username, p.avatar, "peer-avatar", avatarState);
+    const sub = isHost ? "Hosting" : isOnline ? "Online" : "Offline";
+    const subClass = isHost ? "hosting" : isOnline ? "online" : "";
+
+    const avatarHtml = UI._buildAvatarHtml(p.username, p.avatar, "peer-avatar", "");
+    const statusTextHtml = p.status_text
+      ? `<div class="peer-status-text">${escHtml(p.status_text)}</div>`
+      : "";
 
     const removeBtn = p.is_self
       ? ""
@@ -271,10 +295,14 @@ const UI = {
          </button>`;
 
     div.innerHTML = `
-      ${avatarHtml}
-      <div class="peer-info">
+      <div class="peer-avatar-wrap" data-open-profile="${escHtml(p.username)}" style="cursor:pointer" title="View profile">
+        ${avatarHtml}
+        <div class="status-dot ${effectiveStatus}"></div>
+      </div>
+      <div class="peer-info" data-open-profile="${escHtml(p.username)}" style="cursor:pointer">
         <div class="peer-name">${escHtml(p.username)}${p.is_self ? ' <span style="opacity:.5;font-weight:400">(you)</span>' : ""}</div>
         <div class="peer-sub ${subClass}">${sub}</div>
+        ${statusTextHtml}
       </div>
       <div class="peer-meta">
         ${isHost ? '<span class="host-badge">HOST</span>' : ""}
@@ -448,20 +476,52 @@ const UI = {
   // ── Chat ───────────────────────────────────────────────────────
   appendChatMsg(msg, selfUsername) {
     const log = document.getElementById("chat-log");
-    const self = msg.sender === selfUsername;
+    const isSelf = msg.sender === selfUsername;
+
+    // Determine grouping: same sender within 5 minutes
+    const msgTs = msg.ts ? msg.ts * 1000 : Date.now();
+    const isContinued =
+      this._lastChatSender === msg.sender &&
+      msgTs - this._lastChatTs < 5 * 60 * 1000;
+    this._lastChatSender = msg.sender;
+    this._lastChatTs = msgTs;
+
+    // Format timestamp
+    const timeStr = new Date(msgTs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    // Render markdown + embed images
+    const rendered = _embedImages(_renderMarkdown(msg.text));
+
+    // Build avatar html
+    const avatarHtml = `<div class="chat-avatar-sm">${escHtml(msg.sender[0].toUpperCase())}</div>`;
+    const placeholderHtml = `<div class="chat-avatar-placeholder"></div>`;
+
     const div = document.createElement("div");
-    div.className = `chat-msg ${self ? "self" : ""}`;
-    div.innerHTML = `
-      <div class="chat-bubble-row">
-        <div class="chat-avatar-sm">${msg.sender[0].toUpperCase()}</div>
-        <div class="chat-bubble">${escHtml(msg.text)}</div>
-      </div>
-      <div class="chat-sender">${escHtml(msg.sender)}</div>
-    `;
+    div.className = `chat-msg ${isSelf ? "self" : ""} ${isContinued ? "continued" : ""}`;
+    div.dataset.sender = msg.sender;
+    div.dataset.ts = msgTs;
+
+    if (isContinued) {
+      div.innerHTML = `
+        <div class="chat-bubble-row">
+          ${isSelf ? "" : placeholderHtml}
+          <div class="chat-bubble chat-markdown">${rendered}</div>
+        </div>`;
+    } else {
+      div.innerHTML = `
+        <div class="chat-msg-header">
+          ${isSelf ? "" : `<span class="chat-sender-name">${escHtml(msg.sender)}</span>`}
+          <span class="chat-time">${timeStr}</span>
+        </div>
+        <div class="chat-bubble-row">
+          ${isSelf ? "" : avatarHtml}
+          <div class="chat-bubble chat-markdown">${rendered}</div>
+        </div>`;
+    }
+
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
 
-    // Badge if not on chat tab
     if (!document.getElementById("tab-chat").classList.contains("active")) {
       document.getElementById("chat-badge").classList.remove("hidden");
     }

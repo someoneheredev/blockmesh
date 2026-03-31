@@ -31,7 +31,10 @@ class Peer:
     last_seen: float = field(default_factory=time.time)
     benchmark: BenchmarkResult | None = None
     is_host: bool = False
-    avatar: str = ""  # base64 data URL, received via heartbeat
+    avatar: str = ""        # base64 data URL, received via heartbeat
+    status: str = "online"  # online | away | dnd | invisible
+    status_text: str = ""
+    bio: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -151,6 +154,9 @@ class GroupManager:
         self._current_host: str | None = None
         self._local_benchmark: BenchmarkResult | None = None
         self._local_avatar: str = ""
+        self._local_status: str = "online"
+        self._local_status_text: str = ""
+        self._local_bio: str = ""
 
         # Cache relay lookups: {username: (result_dict, timestamp)}
         self._relay_cache: dict[str, tuple[dict, float]] = {}
@@ -218,6 +224,14 @@ class GroupManager:
 
     def set_local_avatar(self, avatar: str) -> None:
         self._local_avatar = avatar
+
+    def set_local_profile(self, status: str = "", status_text: str = None, bio: str = None) -> None:
+        if status:
+            self._local_status = status
+        if status_text is not None:
+            self._local_status_text = status_text
+        if bio is not None:
+            self._local_bio = bio
 
     def elect_best_host(self) -> str | None:
         candidates: list[tuple[float, str]] = []
@@ -531,6 +545,10 @@ class GroupManager:
             if self.on_peer_avatar:
                 self.on_peer_avatar(username, avatar)
 
+        peer.status = payload.get("status", "online")
+        peer.status_text = payload.get("status_text", "")
+        peer.bio = payload.get("bio", "")
+
         self._notify_peers_changed()
 
         if was_current_host_online and not self._is_host_online():
@@ -551,6 +569,11 @@ class GroupManager:
             payload["benchmark"] = self._local_benchmark.to_dict()
         if self._local_avatar:
             payload["avatar"] = self._local_avatar
+        payload["status"] = self._local_status
+        if self._local_status_text:
+            payload["status_text"] = self._local_status_text
+        if self._local_bio:
+            payload["bio"] = self._local_bio
         return payload
 
     def _notify_peers_changed(self) -> None:

@@ -36,6 +36,10 @@ class AppState:
         self.peer_server_status: dict = {}
         # User's own avatar, stored as base64 data URL.
         self.avatar: str = ""
+        # User profile presence fields.
+        self.status: str = "online"       # online | away | dnd | invisible
+        self.status_text: str = ""        # e.g. "Playing SkyBlock"
+        self.bio: str = ""                # short bio shown on profile card
 
         self._MAX_LOG = 500
         self._mc_stdout_queue: std_queue.Queue[str] | None = None

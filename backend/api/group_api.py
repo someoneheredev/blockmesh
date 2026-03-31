@@ -51,21 +51,27 @@ def get_peers():
     peers = []
     for p in gm.get_peers():
         peers.append({
-            "username": p.username,
-            "ip":       p.ip,
-            "online":   p.online,
-            "is_host":  p.username == host,
-            "score":    p.benchmark.composite if p.benchmark else None,
-            "avatar":   p.avatar,
+            "username":    p.username,
+            "ip":          p.ip,
+            "online":      p.online,
+            "is_host":     p.username == host,
+            "score":       p.benchmark.composite if p.benchmark else None,
+            "avatar":      p.avatar,
+            "status":      p.status,
+            "status_text": p.status_text,
+            "bio":         p.bio,
         })
     peers.insert(0, {
-        "username": state.username,
-        "ip":       state.local_ip,
-        "online":   True,
-        "is_host":  state.username == host,
-        "score":    state.bench_result.composite if state.bench_result else None,
-        "is_self":  True,
-        "avatar":   state.avatar,
+        "username":    state.username,
+        "ip":          state.local_ip,
+        "online":      True,
+        "is_host":     state.username == host,
+        "score":       state.bench_result.composite if state.bench_result else None,
+        "is_self":     True,
+        "avatar":      state.avatar,
+        "status":      state.status,
+        "status_text": state.status_text,
+        "bio":         state.bio,
     })
     return jsonify(peers)
 
