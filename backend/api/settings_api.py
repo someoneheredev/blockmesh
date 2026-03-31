@@ -19,11 +19,17 @@ def save_settings():
     cfg  = load_config()
     cfg.update({k: v for k, v in data.items()
                 if k in ("username", "theme", "default_ram_mb",
-                          "default_cpu_threads", "last_jar_path", "auto_backup")})
+                          "default_cpu_threads", "last_jar_path", "auto_backup",
+                          "last_java_path", "avatar")})
     save_config(cfg)
 
     if "username" in data:
         state.username = data["username"]
+
+    if "avatar" in data:
+        state.avatar = data["avatar"]
+        if state.group_manager:
+            state.group_manager.set_local_avatar(data["avatar"])
 
     return jsonify({"ok": True})
 

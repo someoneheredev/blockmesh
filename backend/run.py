@@ -137,16 +137,27 @@ def main():
         def _on_relay_status_changed(connected: bool) -> None:
             socketio.emit("relay_status", {"connected": connected})
 
-        gm.on_peers_changed       = _on_peers_changed
-        gm.on_host_changed        = _on_host_changed
-        gm.on_host_failing        = _on_host_failing
-        gm.on_chat_message        = _on_chat
-        gm.on_friend_request      = _on_friend_request
-        gm.on_friend_accepted     = _on_friend_accepted
-        gm.on_friend_declined     = _on_friend_declined
-        gm.on_peer_server_status  = _on_peer_server_status
+        def _on_peer_avatar(username: str, avatar: str) -> None:
+            socketio.emit("peer_avatar", {"username": username, "avatar": avatar})
+
+        gm.on_peers_changed        = _on_peers_changed
+        gm.on_host_changed         = _on_host_changed
+        gm.on_host_failing         = _on_host_failing
+        gm.on_chat_message         = _on_chat
+        gm.on_friend_request       = _on_friend_request
+        gm.on_friend_accepted      = _on_friend_accepted
+        gm.on_friend_declined      = _on_friend_declined
+        gm.on_peer_server_status   = _on_peer_server_status
         gm.on_relay_status_changed = _on_relay_status_changed
+        gm.on_peer_avatar          = _on_peer_avatar
         gm.start()
+
+        # Load saved avatar and push into heartbeat payload.
+        saved_avatar = cfg.get("avatar", "")
+        if saved_avatar:
+            state.avatar = saved_avatar
+            gm.set_local_avatar(saved_avatar)
+
         state.group_manager = gm
 
         # Background thread: prune expired friend requests every 60 seconds.

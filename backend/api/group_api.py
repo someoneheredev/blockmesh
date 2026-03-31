@@ -56,6 +56,7 @@ def get_peers():
             "online":   p.online,
             "is_host":  p.username == host,
             "score":    p.benchmark.composite if p.benchmark else None,
+            "avatar":   p.avatar,
         })
     peers.insert(0, {
         "username": state.username,
@@ -64,6 +65,7 @@ def get_peers():
         "is_host":  state.username == host,
         "score":    state.bench_result.composite if state.bench_result else None,
         "is_self":  True,
+        "avatar":   state.avatar,
     })
     return jsonify(peers)
 
@@ -206,3 +208,36 @@ def send_chat():
 def get_host():
     host = state.group_manager.get_current_host() if state.group_manager else None
     return jsonify({"host": host})
+
+
+@bp.route("/info", methods=["GET"])
+def get_group_info():
+    from backend.config.settings import load_groups
+    data = load_groups()
+    return jsonify({
+        "name":  data.get("group_name", ""),
+        "emoji": data.get("group_emoji", ""),
+    })
+
+
+@bp.route("/info", methods=["POST"])
+def set_group_info():
+    data = request.get_json(force=True)
+    from backend.config.settings import load_groups, save_groups
+    groups = load_groups()
+    groups["group_name"]  = str(data.get("name",  ""))[:30]
+    groups["group_emoji"] = str(data.get("emoji", ""))[:8]
+    save_groups(groups)
+    return jsonify({"ok": True})
+
+
+@bp.route("/leave", methods=["POST"])
+def leave_group():
+    if state.group_manager:
+        for peer in list(state.group_manager.get_peers()):
+            state.group_manager.remove_peer(peer.username)
+    from backend.config.settings import load_groups, save_groups
+    groups = load_groups()
+    groups["peers"] = []
+    save_groups(groups)
+    return jsonify({"ok": True})

@@ -31,6 +31,7 @@ class Peer:
     last_seen: float = field(default_factory=time.time)
     benchmark: BenchmarkResult | None = None
     is_host: bool = False
+    avatar: str = ""  # base64 data URL, received via heartbeat
 
     def to_dict(self) -> dict:
         return {
@@ -149,6 +150,7 @@ class GroupManager:
         self._peers: dict[str, Peer] = {}
         self._current_host: str | None = None
         self._local_benchmark: BenchmarkResult | None = None
+        self._local_avatar: str = ""
 
         # Cache relay lookups: {username: (result_dict, timestamp)}
         self._relay_cache: dict[str, tuple[dict, float]] = {}
@@ -176,6 +178,8 @@ class GroupManager:
         self.on_peer_server_status: Callable[[dict], None] | None = None
         # Called when relay connection status changes: True=connected, False=lost.
         self.on_relay_status_changed: Callable[[bool], None] | None = None
+        # Called when a peer sends their avatar via heartbeat: (username, avatar_data_url)
+        self.on_peer_avatar: Callable[[str, str], None] | None = None
 
         self._server.on_message(self._handle_message)
         self._load_saved_peers()
@@ -211,6 +215,9 @@ class GroupManager:
 
     def set_local_benchmark(self, result: BenchmarkResult) -> None:
         self._local_benchmark = result
+
+    def set_local_avatar(self, avatar: str) -> None:
+        self._local_avatar = avatar
 
     def elect_best_host(self) -> str | None:
         candidates: list[tuple[float, str]] = []
@@ -518,6 +525,12 @@ class GroupManager:
         if bench_data:
             peer.benchmark = BenchmarkResult.from_dict(bench_data)
 
+        avatar = payload.get("avatar", "")
+        if avatar and avatar != peer.avatar:
+            peer.avatar = avatar
+            if self.on_peer_avatar:
+                self.on_peer_avatar(username, avatar)
+
         self._notify_peers_changed()
 
         if was_current_host_online and not self._is_host_online():
@@ -536,6 +549,8 @@ class GroupManager:
         payload: dict = {}
         if self._local_benchmark:
             payload["benchmark"] = self._local_benchmark.to_dict()
+        if self._local_avatar:
+            payload["avatar"] = self._local_avatar
         return payload
 
     def _notify_peers_changed(self) -> None:

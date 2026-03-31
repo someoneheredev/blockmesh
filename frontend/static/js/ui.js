@@ -252,8 +252,18 @@ const UI = {
         : "Offline";
     const subClass = isHost ? "hosting" : p.online || p.is_self ? "online" : "";
 
+    const avatarHtml = UI._buildAvatarHtml(p.username, p.avatar, "peer-avatar", avatarState);
+
+    const removeBtn = p.is_self
+      ? ""
+      : `<button class="btn-remove-peer" data-peer="${escHtml(p.username)}" title="Remove from group">
+           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+           </svg>
+         </button>`;
+
     div.innerHTML = `
-      <div class="peer-avatar ${avatarState}">${p.username[0].toUpperCase()}</div>
+      ${avatarHtml}
       <div class="peer-info">
         <div class="peer-name">${escHtml(p.username)}${p.is_self ? ' <span style="opacity:.5;font-weight:400">(you)</span>' : ""}</div>
         <div class="peer-sub ${subClass}">${sub}</div>
@@ -261,9 +271,127 @@ const UI = {
       <div class="peer-meta">
         ${isHost ? '<span class="host-badge">HOST</span>' : ""}
         ${p.score != null ? `<span class="peer-score">${Math.round(p.score)} pts</span>` : ""}
+        ${removeBtn}
       </div>
     `;
     return div;
+  },
+
+  _buildAvatarHtml(username, avatarData, className, stateClass) {
+    const cached = avatarData || localStorage.getItem(`bm_avatar_${username}`);
+    if (cached && cached.startsWith("data:")) {
+      return `<div class="${className} ${stateClass} has-img"><img src="${cached}" alt="${escHtml(username)}" /></div>`;
+    }
+    return `<div class="${className} ${stateClass}">${username[0].toUpperCase()}</div>`;
+  },
+
+  updateAvatars(username, avatar) {
+    localStorage.setItem(`bm_avatar_${username}`, avatar);
+    document.querySelectorAll(`[data-username="${CSS.escape(username)}"] .peer-avatar`).forEach((el) => {
+      el.innerHTML = `<img src="${avatar}" alt="${escHtml(username)}" />`;
+      el.classList.add("has-img");
+    });
+  },
+
+  setOwnAvatar(avatar) {
+    const el = document.getElementById("sidebar-avatar");
+    if (!el) return;
+    if (avatar && avatar.startsWith("data:")) {
+      el.innerHTML = `<img src="${avatar}" alt="you" />`;
+      el.classList.add("has-img");
+    } else {
+      el.classList.remove("has-img");
+    }
+  },
+
+  renderManagePlayers(players, onKick, onBan) {
+    const list = document.getElementById("manage-players-list");
+    if (!list) return;
+    list.innerHTML = "";
+    if (!players.length) {
+      list.innerHTML = '<div class="manage-empty">No players online right now</div>';
+      return;
+    }
+    players.forEach((name) => {
+      const row = document.createElement("div");
+      row.className = "player-manage-row";
+      row.innerHTML = `
+        <span class="player-name-text">${escHtml(name)}</span>
+        <div class="player-actions">
+          <button class="btn-secondary btn-sm btn-kick" data-name="${escHtml(name)}">Kick</button>
+          <button class="btn-danger btn-sm btn-ban" data-name="${escHtml(name)}">Ban</button>
+        </div>
+      `;
+      row.querySelector(".btn-kick").addEventListener("click", () => onKick(name));
+      row.querySelector(".btn-ban").addEventListener("click", () => onBan(name));
+      list.appendChild(row);
+    });
+  },
+
+  renderWhitelist(data, onAdd, onRemove, onToggle) {
+    const { whitelist = [], enabled = false } = data;
+    const toggleEl = document.getElementById("whitelist-toggle");
+    if (toggleEl) toggleEl.checked = enabled;
+
+    const list = document.getElementById("whitelist-list");
+    if (!list) return;
+    list.innerHTML = "";
+    if (!whitelist.length) {
+      list.innerHTML = '<div class="manage-empty">No players on whitelist</div>';
+      return;
+    }
+    whitelist.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "whitelist-entry";
+      row.innerHTML = `
+        <span class="player-name-text">${escHtml(entry.name)}</span>
+        <button class="btn-remove-peer" data-name="${escHtml(entry.name)}" title="Remove">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      `;
+      row.querySelector("[data-name]").addEventListener("click", () => onRemove(entry.name));
+      list.appendChild(row);
+    });
+  },
+
+  renderProperties(props) {
+    const KEY_FIELDS = [
+      { key: "max-players",  label: "Max Players",      type: "number", min: 1, max: 100 },
+      { key: "difficulty",   label: "Difficulty",        type: "select", options: ["peaceful", "easy", "normal", "hard"] },
+      { key: "gamemode",     label: "Default Gamemode",  type: "select", options: ["survival", "creative", "adventure", "spectator"] },
+      { key: "pvp",          label: "PvP Enabled",       type: "toggle" },
+      { key: "online-mode",  label: "Online Mode",       type: "toggle" },
+      { key: "level-name",   label: "World Name",        type: "text" },
+    ];
+    const grid = document.getElementById("properties-grid");
+    if (!grid) return;
+    grid.innerHTML = "";
+    KEY_FIELDS.forEach((field) => {
+      const val = props[field.key] ?? "";
+      const row = document.createElement("div");
+      row.className = "property-row";
+      let input;
+      if (field.type === "number") {
+        input = `<input class="field-input prop-input" type="number" min="${field.min}" max="${field.max}" value="${escHtml(val)}" data-key="${field.key}" />`;
+      } else if (field.type === "select") {
+        const opts = field.options
+          .map((o) => `<option value="${o}"${val === o ? " selected" : ""}>${o.charAt(0).toUpperCase() + o.slice(1)}</option>`)
+          .join("");
+        input = `<select class="field-input prop-input" data-key="${field.key}">${opts}</select>`;
+      } else if (field.type === "toggle") {
+        const checked = val === "true" ? "checked" : "";
+        input = `<label class="toggle-row" style="margin:0">
+          <input type="checkbox" class="prop-toggle prop-input" data-key="${field.key}" ${checked} />
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>`;
+      } else {
+        input = `<input class="field-input prop-input" type="text" value="${escHtml(val)}" data-key="${field.key}" />`;
+      }
+      row.innerHTML = `<label class="prop-label">${escHtml(field.label)}</label>${input}`;
+      grid.appendChild(row);
+    });
   },
 
   // -- Chat

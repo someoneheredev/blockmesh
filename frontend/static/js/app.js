@@ -20,6 +20,10 @@
   let logPollTimer = null;
   // Last server status received from the host peer (used when we're not the host).
   let peerServerStatus = null;
+  // Own avatar as base64 data URL.
+  let currentAvatar = "";
+  // Pending avatar to save after setup submit.
+  let pendingSetupAvatar = "";
 
   const MC_DONE_REGEX = /Done\s+\(\d+\.?\d*s\)!/;
 
@@ -61,6 +65,11 @@
     UI.setHostInfo(host, host === username ? localIp : null, 25565);
     UI.appendSystemMsg(`⚡ ${host} is now hosting.`);
     refreshPeers();
+    updateManageTabVisibility();
+  });
+
+  socket.on("peer_avatar", ({ username: u, avatar }) => {
+    UI.updateAvatars(u, avatar);
   });
 
   socket.on("friend_request", (req) => {
@@ -117,6 +126,7 @@
     const cfg = await API.getSettings().catch(() => ({}));
     username = cfg.username || "";
     jarPath = cfg.last_jar_path || "";
+    currentAvatar = cfg.avatar || "";
     UI.setJarDisplay(jarPath);
 
     if (!username) {
@@ -131,8 +141,11 @@
     document.getElementById("app").classList.remove("hidden");
 
     document.getElementById("sidebar-username").textContent = username;
-    document.getElementById("sidebar-avatar").textContent =
-      username[0].toUpperCase();
+    if (currentAvatar) {
+      UI.setOwnAvatar(currentAvatar);
+    } else {
+      document.getElementById("sidebar-avatar").textContent = username[0].toUpperCase();
+    }
 
     const { ip } = await API.getIp().catch(() => ({ ip: "—" }));
     localIp = ip;
@@ -143,6 +156,9 @@
         UI.switchTab(btn.dataset.tab);
         if (btn.dataset.tab === "chat") {
           document.getElementById("chat-badge").classList.add("hidden");
+        }
+        if (btn.dataset.tab === "manage") {
+          refreshManageTab();
         }
       });
     });
@@ -159,9 +175,22 @@
       loadChat(),
       loadLog(),
       loadPendingRequests(),
+      loadGroupInfo(),
     ]);
 
     autoDetectJava();
+
+    // Fetch initial host so manage tab visibility is set correctly.
+    fetch("/api/group/host")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.host) {
+          currentHost = d.host;
+          UI.setHostInfo(d.host, d.host === username ? localIp : null, 25565);
+          updateManageTabVisibility();
+        }
+      })
+      .catch(() => {});
 
     statusTimer = setInterval(refreshStatus, 3000);
   }
@@ -198,7 +227,11 @@
       err.classList.remove("hidden");
     }
 
-    await API.saveSettings({ username: val });
+    const settingsToSave = { username: val };
+    if (pendingSetupAvatar) {
+      settingsToSave.avatar = pendingSetupAvatar;
+    }
+    await API.saveSettings(settingsToSave);
     window.location.reload();
   }
 
@@ -686,6 +719,277 @@
     });
 
   }
+
+  // ── Setup screen avatar ───────────────────────────────────────────
+  document.getElementById("setup-avatar-input").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    resizeImageFile(file, 64, 64, (dataUrl) => {
+      pendingSetupAvatar = dataUrl;
+      const prev = document.getElementById("setup-avatar-preview");
+      prev.innerHTML = `<img src="${dataUrl}" alt="avatar" />`;
+      prev.classList.add("has-img");
+    });
+  });
+
+  // ── Avatar resize helper ──────────────────────────────────────────
+  function resizeImageFile(file, w, h, cb) {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        // Crop to square from center
+        const size = Math.min(img.width, img.height);
+        const sx = (img.width - size) / 2;
+        const sy = (img.height - size) / 2;
+        ctx.drawImage(img, sx, sy, size, size, 0, 0, w, h);
+        cb(canvas.toDataURL("image/jpeg", 0.75));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ── Profile modal ─────────────────────────────────────────────────
+  document.getElementById("user-chip-btn").addEventListener("click", openProfileModal);
+  document.getElementById("profile-close").addEventListener("click", () => UI.hideModal("profile-modal"));
+
+  function openProfileModal() {
+    const prevEl = document.getElementById("profile-avatar-preview");
+    if (currentAvatar) {
+      prevEl.innerHTML = `<img src="${currentAvatar}" alt="avatar" />`;
+      prevEl.classList.add("has-img");
+    } else {
+      prevEl.textContent = username[0]?.toUpperCase() || "?";
+      prevEl.classList.remove("has-img");
+    }
+    document.getElementById("profile-username").value = username;
+    UI.showModal("profile-modal");
+  }
+
+  document.getElementById("profile-avatar-input").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    resizeImageFile(file, 64, 64, (dataUrl) => {
+      const prev = document.getElementById("profile-avatar-preview");
+      prev.innerHTML = `<img src="${dataUrl}" alt="avatar" />`;
+      prev.classList.add("has-img");
+      document.getElementById("profile-avatar-input")._pendingAvatar = dataUrl;
+    });
+  });
+
+  document.getElementById("profile-avatar-remove").addEventListener("click", () => {
+    const prev = document.getElementById("profile-avatar-preview");
+    prev.innerHTML = username[0]?.toUpperCase() || "?";
+    prev.classList.remove("has-img");
+    document.getElementById("profile-avatar-input")._pendingAvatar = "";
+  });
+
+  document.getElementById("profile-save").addEventListener("click", async () => {
+    const newUsername = document.getElementById("profile-username").value.trim();
+    if (!newUsername || !/^[\w]{1,24}$/.test(newUsername)) {
+      UI.toast("Invalid username — letters, numbers, underscores only.", "error");
+      return;
+    }
+    const avatarInput = document.getElementById("profile-avatar-input");
+    const newAvatar = avatarInput._pendingAvatar !== undefined
+      ? avatarInput._pendingAvatar
+      : currentAvatar;
+
+    const settings = { username: newUsername };
+    if (newAvatar !== currentAvatar) settings.avatar = newAvatar;
+
+    await API.saveSettings(settings).catch((e) => UI.toast(e.message, "error"));
+    UI.toast("Profile saved!", "success");
+    UI.hideModal("profile-modal");
+
+    if (newAvatar !== currentAvatar || newUsername !== username) {
+      window.location.reload();
+    }
+  });
+
+  // ── Group info ────────────────────────────────────────────────────
+  async function loadGroupInfo() {
+    const info = await API.getGroupInfo().catch(() => ({ name: "", emoji: "" }));
+    applyGroupInfo(info.name, info.emoji);
+  }
+
+  function applyGroupInfo(name, emoji) {
+    const nameEl = document.getElementById("group-name-display");
+    const emojiEl = document.getElementById("group-emoji-display");
+    if (nameEl) nameEl.textContent = name || "Your Group";
+    if (emojiEl) emojiEl.textContent = emoji ? emoji + " " : "";
+    const inputName = document.getElementById("group-name-input");
+    const inputEmoji = document.getElementById("group-emoji-input");
+    if (inputName) inputName.value = name || "";
+    if (inputEmoji) inputEmoji.value = emoji || "";
+  }
+
+  document.getElementById("edit-group-btn").addEventListener("click", () => {
+    UI.showModal("group-info-modal");
+  });
+  document.getElementById("group-info-close").addEventListener("click", () => {
+    UI.hideModal("group-info-modal");
+  });
+  document.getElementById("group-info-save").addEventListener("click", async () => {
+    const name = document.getElementById("group-name-input").value.trim();
+    const emoji = document.getElementById("group-emoji-input").value.trim();
+    await API.setGroupInfo(name, emoji).catch((e) => UI.toast(e.message, "error"));
+    applyGroupInfo(name, emoji);
+    UI.hideModal("group-info-modal");
+    UI.toast("Group updated!", "success");
+  });
+
+  // Emoji quick-pick buttons
+  document.querySelectorAll(".emoji-pick-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.getElementById("group-emoji-input").value = btn.dataset.emoji;
+    });
+  });
+
+  // ── Leave group ───────────────────────────────────────────────────
+  document.getElementById("leave-group-btn").addEventListener("click", async () => {
+    const confirmed = confirm(
+      "Are you sure you want to leave the group? This will remove all friends."
+    );
+    if (!confirmed) return;
+    try {
+      await API.leaveGroup();
+      UI.toast("You've left the group.", "success");
+      refreshPeers();
+    } catch (e) {
+      UI.toast(e.message, "error");
+    }
+  });
+
+  // ── Peer remove (event delegation on #peer-list) ──────────────────
+  document.getElementById("peer-list").addEventListener("click", async (e) => {
+    const btn = e.target.closest(".btn-remove-peer[data-peer]");
+    if (!btn) return;
+    const peer = btn.dataset.peer;
+    try {
+      await API.removePeer(peer);
+      UI.toast(`${peer} removed from group.`, "success");
+      refreshPeers();
+    } catch (err) {
+      UI.toast(err.message, "error");
+    }
+  });
+
+  // ── Manage tab ────────────────────────────────────────────────────
+  function updateManageTabVisibility() {
+    const btn = document.getElementById("manage-nav-btn");
+    if (!btn) return;
+    const isHost = currentHost === username;
+    btn.classList.toggle("hidden", !isHost);
+    // If we're no longer host and manage tab is active, switch to server tab
+    if (!isHost && document.getElementById("tab-manage")?.classList.contains("active")) {
+      UI.switchTab("server");
+    }
+  }
+
+  async function refreshManageTab() {
+    // Players
+    const status = await API.getStatus().catch(() => null);
+    const players = status?.players || [];
+    UI.renderManagePlayers(players, kickPlayer, banPlayer);
+
+    // Whitelist
+    const wl = await API.getWhitelist().catch(() => ({ whitelist: [], enabled: false }));
+    UI.renderWhitelist(wl, null, removeFromWhitelist, null);
+
+    // Properties
+    const propsData = await API.getProperties().catch(() => ({ properties: {} }));
+    UI.renderProperties(propsData.properties || {});
+  }
+
+  async function kickPlayer(name) {
+    try {
+      await API.kickPlayer(name);
+      UI.toast(`Kicked ${name}.`, "success");
+    } catch (e) {
+      UI.toast(e.message, "error");
+    }
+  }
+
+  async function banPlayer(name) {
+    const confirmed = confirm(`Ban ${name}? They will not be able to rejoin.`);
+    if (!confirmed) return;
+    try {
+      await API.banPlayer(name);
+      UI.toast(`Banned ${name}.`, "success");
+    } catch (e) {
+      UI.toast(e.message, "error");
+    }
+  }
+
+  document.getElementById("manage-refresh-btn").addEventListener("click", refreshManageTab);
+
+  document.getElementById("whitelist-toggle").addEventListener("change", async () => {
+    try {
+      await API.updateWhitelist("toggle", "");
+      const wl = await API.getWhitelist();
+      UI.renderWhitelist(wl, null, removeFromWhitelist, null);
+      UI.toast("Whitelist toggled.", "success");
+    } catch (e) {
+      UI.toast(e.message, "error");
+    }
+  });
+
+  document.getElementById("whitelist-add-btn").addEventListener("click", addToWhitelist);
+  document.getElementById("whitelist-add-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addToWhitelist();
+  });
+
+  async function addToWhitelist() {
+    const input = document.getElementById("whitelist-add-input");
+    const name = input.value.trim();
+    if (!name) return;
+    try {
+      await API.updateWhitelist("add", name);
+      input.value = "";
+      const wl = await API.getWhitelist();
+      UI.renderWhitelist(wl, null, removeFromWhitelist, null);
+      UI.toast(`${name} added to whitelist.`, "success");
+    } catch (e) {
+      UI.toast(e.message, "error");
+    }
+  }
+
+  async function removeFromWhitelist(name) {
+    try {
+      await API.updateWhitelist("remove", name);
+      const wl = await API.getWhitelist();
+      UI.renderWhitelist(wl, null, removeFromWhitelist, null);
+      UI.toast(`${name} removed from whitelist.`, "success");
+    } catch (e) {
+      UI.toast(e.message, "error");
+    }
+  }
+
+  document.getElementById("save-properties-btn").addEventListener("click", async () => {
+    const inputs = document.querySelectorAll("#properties-grid .prop-input");
+    const props = {};
+    inputs.forEach((el) => {
+      const key = el.dataset.key;
+      if (!key) return;
+      if (el.type === "checkbox") {
+        props[key] = el.checked ? "true" : "false";
+      } else {
+        props[key] = el.value;
+      }
+    });
+    try {
+      const result = await API.updateProperties(props);
+      UI.toast(result.message || "Properties saved!", "success");
+    } catch (e) {
+      UI.toast(e.message, "error");
+    }
+  });
 
   await boot();
 })();

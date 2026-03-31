@@ -2251,3 +2251,301 @@ button.loading {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%       { opacity: 0.4; transform: scale(0.7); }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   AVATAR IMAGE SUPPORT
+══════════════════════════════════════════════════════════════ */
+.user-avatar.has-img,
+.peer-avatar.has-img,
+.chat-avatar-sm.has-img,
+.setup-avatar-preview.has-img,
+.profile-avatar-preview.has-img {
+  background: transparent !important;
+  overflow: hidden;
+}
+.user-avatar img,
+.peer-avatar img,
+.chat-avatar-sm img,
+.setup-avatar-preview img,
+.profile-avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  display: block;
+}
+.user-chip:hover {
+  background: var(--stone-100);
+  transition: background 0.12s;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SETUP SCREEN AVATAR PICKER
+══════════════════════════════════════════════════════════════ */
+.setup-avatar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.setup-avatar-preview {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--green-500);
+  color: #fff;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 3px solid var(--stone-100);
+}
+.setup-avatar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: var(--white);
+  border: 1.5px solid var(--stone-100);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--stone-700);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.setup-avatar-label:hover {
+  background: var(--stone-50);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PROFILE MODAL
+══════════════════════════════════════════════════════════════ */
+.profile-avatar-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+}
+.profile-avatar-preview {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--green-500);
+  color: #fff;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.profile-avatar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.profile-upload-label {
+  cursor: pointer;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DANGER BUTTON
+══════════════════════════════════════════════════════════════ */
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 16px;
+  background: var(--white);
+  color: var(--red-500);
+  border: 1.5px solid var(--red-400);
+  border-radius: var(--r-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: background 0.12s, border-color 0.12s;
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--red-50);
+  border-color: var(--red-500);
+}
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   REMOVE PEER BUTTON
+══════════════════════════════════════════════════════════════ */
+.btn-remove-peer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--stone-300);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+}
+.btn-remove-peer:hover {
+  color: var(--red-500);
+  background: var(--red-50);
+  border-color: var(--red-400);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   GROUP INFO ROW (Friends tab)
+══════════════════════════════════════════════════════════════ */
+.group-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.btn-icon-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: 1.5px solid var(--stone-100);
+  border-radius: var(--r-sm);
+  color: var(--stone-500);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.btn-icon-sm:hover {
+  background: var(--stone-50);
+  color: var(--stone-900);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   GROUP INFO MODAL — emoji quick-pick
+══════════════════════════════════════════════════════════════ */
+.emoji-quick-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.emoji-pick-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  background: var(--stone-50);
+  border: 1.5px solid var(--stone-100);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 0.1s, transform 0.1s;
+}
+.emoji-pick-btn:hover {
+  background: var(--stone-100);
+  transform: scale(1.15);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MANAGE TAB
+══════════════════════════════════════════════════════════════ */
+.manage-section {
+  background: var(--white);
+  border: 1.5px solid var(--stone-100);
+  border-radius: var(--r-md);
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-xs);
+}
+.manage-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.manage-section-title {
+  font-family: var(--font-head);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--stone-700);
+}
+.manage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.manage-empty {
+  font-size: 12px;
+  color: var(--stone-300);
+  padding: 8px 0;
+}
+.manage-note {
+  font-size: 11px;
+  color: var(--stone-500);
+  margin-bottom: 12px;
+}
+.player-manage-row,
+.whitelist-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--stone-50);
+  border-radius: var(--r-sm);
+  border: 1.5px solid var(--stone-100);
+}
+.player-name-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--stone-700);
+}
+.player-actions {
+  display: flex;
+  gap: 6px;
+}
+.whitelist-add-row {
+  display: flex;
+  gap: 8px;
+}
+.whitelist-add-row .field-input {
+  flex: 1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SERVER PROPERTIES GRID
+══════════════════════════════════════════════════════════════ */
+.properties-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.property-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.prop-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--stone-500);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}

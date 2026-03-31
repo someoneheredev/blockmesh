@@ -34,6 +34,8 @@ class AppState:
         self.pending_friend_requests: list[dict] = []
         # Status of the host's Minecraft server, received via P2P — shown to non-hosts.
         self.peer_server_status: dict = {}
+        # User's own avatar, stored as base64 data URL.
+        self.avatar: str = ""
 
         self._MAX_LOG = 500
         self._mc_stdout_queue: std_queue.Queue[str] | None = None

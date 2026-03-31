@@ -82,4 +82,34 @@ const API = {
   // Benchmark
   runBenchmark: () => apiFetch("/api/benchmark/run", { method: "POST" }),
   getBenchmark: () => apiFetch("/api/benchmark/result"),
+
+  // Group info & membership
+  getGroupInfo: () => apiFetch("/api/group/info"),
+  setGroupInfo: (name, emoji) =>
+    apiFetch("/api/group/info", { method: "POST", body: JSON.stringify({ name, emoji }) }),
+  leaveGroup: () => apiFetch("/api/group/leave", { method: "POST", body: JSON.stringify({}) }),
+
+  // Server management (host-only)
+  kickPlayer: (name) =>
+    apiFetch("/api/server/command", {
+      method: "POST",
+      body: JSON.stringify({ command: `kick ${name}` }),
+    }),
+  banPlayer: (name) =>
+    apiFetch("/api/server/command", {
+      method: "POST",
+      body: JSON.stringify({ command: `ban ${name}` }),
+    }),
+  getWhitelist: () => apiFetch("/api/server/whitelist"),
+  updateWhitelist: (action, username) =>
+    apiFetch("/api/server/whitelist", {
+      method: "POST",
+      body: JSON.stringify({ action, username }),
+    }),
+  getProperties: () => apiFetch("/api/server/properties"),
+  updateProperties: (properties) =>
+    apiFetch("/api/server/properties", {
+      method: "POST",
+      body: JSON.stringify({ properties }),
+    }),
 };
