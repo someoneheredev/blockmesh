@@ -74,11 +74,7 @@ const UI = {
         pane.classList.remove("active");
       }
     });
-
-    console.log(`Switched to tab: ${tabId}`);
   },
-
-  lastStatus: null,
 
   setServerStatus(status, uptime, isHost, hasHost) {
     const hero = document.getElementById("server-hero");
@@ -223,10 +219,22 @@ const UI = {
     const list = document.getElementById("peer-list");
     list.innerHTML = "";
     let online = 0;
+    const nonSelf = peers.filter((p) => !p.is_self);
     peers.forEach((p) => {
       if (p.online || p.is_self) online++;
       list.appendChild(UI._buildPeerRow(p, selfUsername));
     });
+
+    if (nonSelf.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "peer-list-empty";
+      empty.innerHTML = `
+        <div class="peer-list-empty-icon">🤝</div>
+        <div class="peer-list-empty-title">No friends yet</div>
+        <div class="peer-list-empty-sub">Add a friend using their username — they'll get a request to accept.</div>
+      `;
+      list.appendChild(empty);
+    }
 
     const badge = document.getElementById("online-badge");
     if (badge.textContent !== String(online)) {

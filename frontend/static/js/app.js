@@ -24,6 +24,11 @@
   let currentAvatar = "";
   // Pending avatar to save after setup submit.
   let pendingSetupAvatar = "";
+  // Server port (configurable, default 25565).
+  let serverPort = 25565;
+  // Console command history for up/down navigation.
+  const cmdHistory = [];
+  let cmdHistoryIdx = -1;
 
   const MC_DONE_REGEX = /Done\s+\(\d+\.?\d*s\)!/;
 
@@ -62,7 +67,7 @@
   socket.on("download_done", (d) => onDlDone(d));
   socket.on("host_changed", ({ host }) => {
     currentHost = host;
-    UI.setHostInfo(host, host === username ? localIp : null, 25565);
+    UI.setHostInfo(host, host === username ? localIp : null, serverPort);
     UI.appendSystemMsg(`⚡ ${host} is now hosting.`);
     refreshPeers();
     updateManageTabVisibility();
@@ -179,6 +184,12 @@
     ]);
 
     autoDetectJava();
+    loadTheme();
+
+    // Load saved port
+    serverPort = parseInt(cfg.server_port) || 25565;
+    const portEl = document.getElementById("server-port");
+    if (portEl) portEl.value = serverPort;
 
     // Fetch initial host so manage tab visibility is set correctly.
     fetch("/api/group/host")
@@ -186,7 +197,7 @@
       .then((d) => {
         if (d.host) {
           currentHost = d.host;
-          UI.setHostInfo(d.host, d.host === username ? localIp : null, 25565);
+          UI.setHostInfo(d.host, d.host === username ? localIp : null, serverPort);
           updateManageTabVisibility();
         }
       })
@@ -254,11 +265,14 @@
 
     try {
       const presetVals = UI.getPresetValues(activePreset);
+      serverPort = parseInt(document.getElementById("server-port").value) || 25565;
+      API.saveSettings({ server_port: serverPort });
       await API.startServer({
         jar_path: jarPath,
         java_path: document.getElementById("java-path").value,
         ram_mb: presetVals.ram,
         threads: presetVals.threads,
+        port: serverPort,
       });
       UI.toast("Server start command sent", "success");
       syncLogPoller("starting");
@@ -401,6 +415,11 @@
       }
     });
 
+  document.getElementById("java-path").addEventListener("blur", (e) => {
+    const val = e.target.value.trim();
+    if (val) API.saveSettings({ last_java_path: val }).catch(() => {});
+  });
+
   document
     .getElementById("browse-java-btn")
     .addEventListener("click", async () => {
@@ -428,9 +447,11 @@
   // ── Copy address ─────────────────────────────────────────────────
   document.getElementById("copy-address-btn").addEventListener("click", () => {
     const addr = document.getElementById("connect-address").textContent;
-    navigator.clipboard
-      .writeText(addr)
-      .then(() => UI.toast("Copied to clipboard!", "success"));
+    const btn = document.getElementById("copy-address-btn");
+    navigator.clipboard.writeText(addr).then(() => {
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = "Copy"; }, 2000);
+    });
   });
 
   // ── Friends ──────────────────────────────────────────────────────
@@ -525,17 +546,50 @@
     .getElementById("console-send")
     .addEventListener("click", sendCommand);
   document.getElementById("console-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") sendCommand();
+    if (e.key === "Enter") {
+      sendCommand();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (cmdHistoryIdx < cmdHistory.length - 1) {
+        cmdHistoryIdx++;
+        e.target.value = cmdHistory[cmdHistoryIdx];
+        // Move cursor to end
+        setTimeout(() => e.target.setSelectionRange(e.target.value.length, e.target.value.length), 0);
+      }
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (cmdHistoryIdx > 0) {
+        cmdHistoryIdx--;
+        e.target.value = cmdHistory[cmdHistoryIdx];
+      } else {
+        cmdHistoryIdx = -1;
+        e.target.value = "";
+      }
+    }
   });
   document
     .getElementById("clear-log-btn")
     .addEventListener("click", UI.clearLog);
+
+  // Console scroll-to-bottom button
+  const consoleLog = document.getElementById("console-log");
+  const scrollBottomBtn = document.getElementById("scroll-bottom-btn");
+  consoleLog.addEventListener("scroll", () => {
+    const atBottom = consoleLog.scrollHeight - consoleLog.scrollTop - consoleLog.clientHeight < 60;
+    scrollBottomBtn.classList.toggle("hidden", atBottom);
+  });
+  scrollBottomBtn.addEventListener("click", () => {
+    consoleLog.scrollTop = consoleLog.scrollHeight;
+  });
 
   async function sendCommand() {
     const el = document.getElementById("console-input");
     const cmd = el.value.trim();
     if (!cmd) return;
     el.value = "";
+    cmdHistory.unshift(cmd);
+    if (cmdHistory.length > 50) cmdHistory.pop();
+    cmdHistoryIdx = -1;
     await API.sendCommand(cmd).catch((e) => UI.toast(e.message, "error"));
   }
 
@@ -989,6 +1043,39 @@
     } catch (e) {
       UI.toast(e.message, "error");
     }
+  });
+
+  // ── Dark Mode ──────────────────────────────────────────────────
+  function loadTheme() {
+    const saved = localStorage.getItem("bm_theme");
+    if (saved === "dark") applyDark(true, false);
+  }
+
+  function applyDark(on, save = true) {
+    document.body.classList.toggle("dark", on);
+    const label = document.getElementById("theme-toggle-label");
+    if (label) label.textContent = on ? "Light Mode" : "Dark Mode";
+    if (save) localStorage.setItem("bm_theme", on ? "dark" : "light");
+  }
+
+  document.getElementById("theme-toggle")?.addEventListener("click", () => {
+    const isDark = document.body.classList.contains("dark");
+    applyDark(!isDark);
+  });
+
+  // ── Modal ESC + backdrop close ─────────────────────────────────
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      document.querySelectorAll(".modal-overlay:not(.hidden)").forEach((m) => {
+        m.classList.add("hidden");
+      });
+    }
+  });
+
+  document.querySelectorAll(".modal-overlay").forEach((overlay) => {
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.classList.add("hidden");
+    });
   });
 
   await boot();

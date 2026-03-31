@@ -1745,7 +1745,7 @@ button:disabled {
   color: var(--stone-500);
 }
 
-.relay-status.connected {
+.relay-status.online {
   background: var(--green-50);
   color: var(--green-700);
   border: 1px solid var(--green-100);
@@ -1767,7 +1767,7 @@ button:disabled {
   opacity: 0.6;
 }
 
-.relay-status.connected::before {
+.relay-status.online::before {
   background: var(--green-500);
   opacity: 1;
   animation: pulse 2s infinite;
@@ -2548,4 +2548,151 @@ button.loading {
   color: var(--stone-500);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DARK MODE
+══════════════════════════════════════════════════════════════ */
+body.dark {
+  --cream: #141318;
+  --white: #1c1b22;
+  --stone-50: #232131;
+  --stone-100: #2d2b3d;
+  --stone-200: #3d3a52;
+  --stone-300: #5e5a7a;
+  --stone-500: #8e8aaa;
+  --stone-700: #c8c4e0;
+  --stone-900: #f0eeff;
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.07);
+}
+
+body.dark .modal-overlay {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+body.dark .console-wrap {
+  background: #0e0d16;
+}
+
+body.dark .server-hero.stopped {
+  background: var(--white);
+}
+
+body.dark .toast {
+  background: var(--stone-200);
+  color: var(--stone-900);
+  border: 1px solid var(--stone-100);
+}
+body.dark .toast.success { background: var(--green-700); color: #fff; }
+body.dark .toast.error   { background: var(--red-600);   color: #fff; }
+body.dark .toast.info    { background: var(--blue-500);  color: #fff; }
+
+body.dark .reconnect-banner {
+  background: #7c4a00;
+}
+
+/* Dark mode toggle button */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: 1.5px solid var(--stone-100);
+  border-radius: var(--r-sm);
+  color: var(--stone-500);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 7px;
+  margin-bottom: 8px;
+  transition: background 0.12s, color 0.12s;
+  font-family: var(--font-body);
+}
+.theme-toggle:hover {
+  background: var(--stone-50);
+  color: var(--stone-900);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CONSOLE — SCROLL-TO-BOTTOM FLOATING BUTTON
+══════════════════════════════════════════════════════════════ */
+.console-wrap {
+  position: relative;
+}
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 62px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  background: rgba(56, 161, 105, 0.92);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-full);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  transition: opacity 0.2s, transform 0.15s;
+  z-index: 10;
+  letter-spacing: 0.02em;
+}
+.scroll-bottom-btn:hover {
+  background: rgba(47, 133, 90, 0.96);
+  transform: translateY(-1px);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SERVER PORT INPUT
+══════════════════════════════════════════════════════════════ */
+.port-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.port-row .field-label {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+#server-port {
+  width: 90px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PEER LIST EMPTY STATE
+══════════════════════════════════════════════════════════════ */
+.peer-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 40px 20px;
+  gap: 8px;
+}
+.peer-list-empty-icon {
+  font-size: 38px;
+  margin-bottom: 4px;
+}
+.peer-list-empty-title {
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--stone-700);
+}
+.peer-list-empty-sub {
+  font-size: 12px;
+  color: var(--stone-400);
+  line-height: 1.6;
+  max-width: 220px;
 }
